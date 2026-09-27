@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Music, Users, Sparkles, AlertCircle, Check, ArrowRight, X } from 'lucide-react';
+import { Music, Users, Sparkles, AlertCircle, Check, ArrowRight, X, DoorOpen, DoorClosed, CreditCard } from 'lucide-react';
 import { ALL_TABLES, VENUE_SECTIONS, TableItem } from '@/data/tablesData';
 
 interface SeatingFloorPlanProps {
@@ -301,6 +301,26 @@ export default function SeatingFloorPlan({
             </div>
           </div>
 
+        </div>
+
+        {/* 5. MİMARİ KROKİ ALT ŞERİDİ: GİRİŞ, WC, ÇIKIŞ, KASA */}
+        <div className="pt-6 border-t border-meyhane-border/70 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+          <div className="p-3 rounded-2xl bg-emerald-950/30 border border-emerald-500/40 text-emerald-300 flex items-center justify-center gap-2 shadow-sm">
+            <DoorOpen className="w-4 h-4 text-emerald-400" />
+            <span className="text-xs font-semibold">Ana Giriş Kapısı</span>
+          </div>
+          <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-500/40 text-amber-300 flex items-center justify-center gap-2 shadow-sm">
+            <CreditCard className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-semibold">Kasa &amp; Karşılama</span>
+          </div>
+          <div className="p-3 rounded-2xl bg-indigo-950/30 border border-indigo-500/40 text-indigo-300 flex items-center justify-center gap-2 shadow-sm">
+            <Users className="w-4 h-4 text-indigo-400" />
+            <span className="text-xs font-semibold">Bay &amp; Bayan WC</span>
+          </div>
+          <div className="p-3 rounded-2xl bg-red-950/30 border border-red-500/40 text-red-300 flex items-center justify-center gap-2 shadow-sm">
+            <DoorClosed className="w-4 h-4 text-red-400" />
+            <span className="text-xs font-semibold">Acil Çıkış Kapısı</span>
+          </div>
         </div>
 
       </div>

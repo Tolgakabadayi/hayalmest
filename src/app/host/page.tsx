@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
   Search, 
@@ -22,13 +23,16 @@ import {
   X,
   Layers,
   ChevronRight,
-  Wine
+  Wine,
+  LogOut
 } from 'lucide-react';
 import { Reservation } from '@/lib/storage';
 import { ALL_TABLES, VENUE_SECTIONS, TableItem } from '@/data/tablesData';
 import { formatTableDisplay } from '@/lib/formatters';
 
 export default function HostPanelPage() {
+  const router = useRouter();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -71,8 +75,14 @@ export default function HostPanelPage() {
   };
 
   useEffect(() => {
+    const token = localStorage.getItem('hayalmest_admin_token');
+    if (!token) {
+      router.push('/admin/login?redirect=/host');
+      return;
+    }
+    setIsAuthenticated(true);
     fetchReservations();
-  }, []);
+  }, [router]);
 
   // Update status (e.g. seated)
   const handleMarkSeated = async (id: string, currentStatus: string) => {
@@ -156,6 +166,18 @@ export default function HostPanelPage() {
   const waitingCount = activeDateReservations.filter(r => r.status === 'confirmed' || r.status === 'pending').length;
   const totalGuests = activeDateReservations.reduce((acc, curr) => acc + curr.guestCount, 0);
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-meyhane-bg flex items-center justify-center">
+        <div className="text-center space-y-3 p-8 luxury-card rounded-3xl border border-gold/30">
+          <ShieldCheck className="w-12 h-12 text-gold animate-pulse mx-auto" />
+          <h2 className="text-lg font-bold font-serif text-white">Host Masası Güvenlik Kontrolü</h2>
+          <p className="text-xs text-meyhane-muted">Yönetici yetkisi doğrulanıyor, lütfen bekleyin...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-meyhane-bg text-white pb-16">
       
@@ -173,7 +195,7 @@ export default function HostPanelPage() {
                   HayalMest Host &amp; Karşılama Masası
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-bold">
-                  CANLI
+                  GÜVENLİ OTURUM
                 </span>
               </div>
               <p className="text-[11px] text-meyhane-muted">
@@ -197,6 +219,18 @@ export default function HostPanelPage() {
               <ShieldCheck className="w-3.5 h-3.5 text-gold" />
               <span>Admin Paneli</span>
             </Link>
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.removeItem('hayalmest_admin_token');
+                router.push('/admin/login?redirect=/host');
+              }}
+              className="px-3 py-2 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-xs font-semibold text-red-200 transition-colors flex items-center gap-1.5"
+              title="Oturumu Kapat"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Çıkış</span>
+            </button>
           </div>
 
         </div>
