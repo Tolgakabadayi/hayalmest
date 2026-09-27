@@ -32,7 +32,14 @@ import {
   Eye,
   X,
   ChevronRight,
-  Info
+  ChevronLeft,
+  Info,
+  Hand,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Monitor
 } from 'lucide-react';
 import { TableItem, TableSection, ALL_TABLES, VENUE_SECTIONS } from '@/data/tablesData';
 import { VenueElement } from '@/lib/tablesStorage';
@@ -48,7 +55,7 @@ export default function FloorPlanDesigner({
   initialElements,
   onSave,
 }: FloorPlanDesignerProps) {
-  // State
+  // Tables and Elements state
   const [tables, setTables] = useState<TableItem[]>(initialTables || []);
   const [elements, setElements] = useState<VenueElement[]>(
     initialElements && initialElements.length > 0
@@ -76,17 +83,29 @@ export default function FloorPlanDesigner({
   // Lock design mode
   const [isLocked, setIsLocked] = useState(false);
 
+  // Panels visibility for expansive workspace (Tasarım alanını maksimum genişletme)
+  const [showLeftPanel, setShowLeftPanel] = useState(true);
+  const [showRightPanel, setShowRightPanel] = useState(true);
+  const [isWideMode, setIsWideMode] = useState(false);
+
   // Selection state
   const [selectedItem, setSelectedItem] = useState<{ type: 'table' | 'element'; id: string } | null>(null);
+
+  // Hovered item for instant magnified tooltip
+  const [hoveredTable, setHoveredTable] = useState<TableItem | null>(null);
 
   // Left sidebar category tab
   const [activeAssetTab, setActiveAssetTab] = useState<'tables' | 'architectural' | 'custom'>('tables');
 
-  // Zoom state (default: 0.85 = 85%, range: 0.4 to 2.0)
+  // Zoom state (default: 0.85 = 85%, range: 0.45 to 2.0)
   const [zoom, setZoom] = useState(0.85);
 
-  // Dragging state
+  // Dragging state for items
   const [dragging, setDragging] = useState<{ type: 'table' | 'element'; id: string } | null>(null);
+
+  // Pan (Hand tool) state for canvas dragging
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
 
   // Save feedback state
   const [isSaving, setIsSaving] = useState(false);
@@ -96,9 +115,9 @@ export default function FloorPlanDesigner({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const canvasInnerRef = useRef<HTMLDivElement>(null);
 
-  // Virtual Canvas dimensions (Generous resolution to support up to 200 tables comfortably!)
-  const VIRTUAL_WIDTH = 2200;
-  const VIRTUAL_HEIGHT = 1400;
+  // Generous Virtual Dimensions (Supports 200+ tables with great spacing)
+  const VIRTUAL_WIDTH = 2400;
+  const VIRTUAL_HEIGHT = 1500;
 
   // Custom asset creation form state
   const [customAssetName, setCustomAssetName] = useState('');
@@ -231,7 +250,7 @@ export default function FloorPlanDesigner({
     setCustomAssetName('');
   };
 
-  // Drag Handlers with Zoom compensation
+  // Drag Handlers for items (with Zoom compensation)
   const handleMouseDownItem = (type: 'table' | 'element', id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setSelectedItem({ type, id });
@@ -239,26 +258,52 @@ export default function FloorPlanDesigner({
     setDragging({ type, id });
   };
 
+  // Pan Handlers for the canvas background (Hand Tool / Drag-to-Scroll)
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.target !== canvasInnerRef.current && (e.target as HTMLElement).tagName !== 'DIV') {
+      return;
+    }
+    if (!scrollContainerRef.current) return;
+    setIsPanning(true);
+    setPanStart({
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: scrollContainerRef.current.scrollLeft,
+      scrollTop: scrollContainerRef.current.scrollTop,
+    });
+  };
+
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (!dragging || isLocked || !canvasInnerRef.current) return;
+    // 1. If dragging a table or architectural element:
+    if (dragging && !isLocked && canvasInnerRef.current) {
+      const rect = canvasInnerRef.current.getBoundingClientRect();
+      const unscaledX = (e.clientX - rect.left) / zoom;
+      const unscaledY = (e.clientY - rect.top) / zoom;
 
-    const rect = canvasInnerRef.current.getBoundingClientRect();
-    // Compensate for zoom scale
-    const unscaledX = (e.clientX - rect.left) / zoom;
-    const unscaledY = (e.clientY - rect.top) / zoom;
+      const posX = Math.max(1, Math.min(99, Math.round((unscaledX / VIRTUAL_WIDTH) * 100)));
+      const posY = Math.max(1, Math.min(99, Math.round((unscaledY / VIRTUAL_HEIGHT) * 100)));
 
-    const posX = Math.max(1, Math.min(99, Math.round((unscaledX / VIRTUAL_WIDTH) * 100)));
-    const posY = Math.max(1, Math.min(99, Math.round((unscaledY / VIRTUAL_HEIGHT) * 100)));
+      if (dragging.type === 'table') {
+        setTables(prev => prev.map(t => t.id === dragging.id ? { ...t, posX, posY } : t));
+      } else {
+        setElements(prev => prev.map(el => el.id === dragging.id ? { ...el, posX, posY } : el));
+      }
+      return;
+    }
 
-    if (dragging.type === 'table') {
-      setTables(prev => prev.map(t => t.id === dragging.id ? { ...t, posX, posY } : t));
-    } else {
-      setElements(prev => prev.map(el => el.id === dragging.id ? { ...el, posX, posY } : el));
+    // 2. If panning canvas background:
+    if (isPanning && panStart && scrollContainerRef.current) {
+      const dx = e.clientX - panStart.x;
+      const dy = e.clientY - panStart.y;
+      scrollContainerRef.current.scrollLeft = panStart.scrollLeft - dx;
+      scrollContainerRef.current.scrollTop = panStart.scrollTop - dy;
     }
   };
 
   const handleCanvasMouseUp = () => {
     setDragging(null);
+    setIsPanning(false);
+    setPanStart(null);
   };
 
   // Delete Handlers
@@ -284,13 +329,13 @@ export default function FloorPlanDesigner({
     }
   };
 
-  // Quick Zoom Functions
+  // Zoom Functions
   const handleZoomIn = () => setZoom(prev => Math.min(2.0, Number((prev + 0.15).toFixed(2))));
-  const handleZoomOut = () => setZoom(prev => Math.max(0.4, Number((prev - 0.15).toFixed(2))));
+  const handleZoomOut = () => setZoom(prev => Math.max(0.45, Number((prev - 0.15).toFixed(2))));
   const handleResetZoom = () => setZoom(1.0);
-  const handleFitScreen = () => setZoom(0.55);
+  const handleFitScreen = () => setZoom(0.60);
 
-  // Quick Scroll to Zone in 2200px hall
+  // Quick Scroll to Zone in 2400px hall
   const scrollToZone = (xPct: number, yPct: number) => {
     if (!scrollContainerRef.current) return;
     const targetX = (VIRTUAL_WIDTH * zoom * xPct) / 100 - scrollContainerRef.current.clientWidth / 2;
@@ -340,32 +385,74 @@ export default function FloorPlanDesigner({
   // Total venue capacity
   const totalCapacity = tables.reduce((acc, t) => acc + (t.capacity || 0), 0);
 
+  // Dynamic Adaptive Text Scaling for readability at zoom-out!
+  // If zoom is less than 0.85, counter-scale the labels so that text NEVER drops below 11-12px!
+  const textScale = zoom < 0.85 ? Math.min(2.1, Number((0.85 / zoom).toFixed(2))) : 1.0;
+
+  // Dynamic min table card dimensions to ensure clickability and visual presence even at 45% zoom:
+  const tableMinW = Math.max(76, Math.round(76 * (zoom < 0.85 ? 0.85 / zoom : 1)));
+  const tableMinH = Math.max(54, Math.round(54 * (zoom < 0.85 ? 0.85 / zoom : 1)));
+
+  // Calculate grid layout columns based on visible panels
+  const isCenterWide = isWideMode || (!showLeftPanel && !showRightPanel);
+  const centerColSpan = 
+    isCenterWide ? 'lg:col-span-12' :
+    (!showLeftPanel || !showRightPanel) ? 'lg:col-span-9' :
+    'lg:col-span-6';
+
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-4 animate-fadeIn">
       
-      {/* Top Bar with actions, counters & lock button */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-5 rounded-3xl bg-meyhane-surface border border-meyhane-border shadow-xl">
+      {/* Top Bar with actions, counters, view controls & lock button */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-4 sm:p-5 rounded-3xl bg-meyhane-surface border border-meyhane-border shadow-xl">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-lg font-bold font-serif text-white flex items-center gap-2">
               <Layers className="w-5 h-5 text-gold" />
               <span>Sürükle - Bırak Salon &amp; Kroki Tasarımcısı</span>
             </h2>
-            <span className="px-2.5 py-0.5 rounded-full bg-gold/15 text-gold text-xs font-semibold border border-gold/30">
-              {tables.length} Masa • {totalCapacity} Kişi Kapasite • {elements.length} Mimari Öğe
+            <span className="px-3 py-1 rounded-full bg-gold/15 text-gold text-xs font-semibold border border-gold/30 flex items-center gap-2">
+              <strong className="text-white">{tables.length}</strong> Masa • 
+              <strong className="text-white">{totalCapacity}</strong> Kapasite • 
+              <strong className="text-emerald-400">{elements.length}</strong> Mimari Öğe
             </span>
           </div>
           <p className="text-xs text-gray-400">
-            Masaları, sahneyi, barı, WC&apos;yi ve kapıları kroki çizer gibi yerleştirin. Büyük salonlar için yakınlaştırıp uzaklaştırın ve tasarımı kilitleyin.
+            Masaları, sahneyi, barı ve kapıları yerleştirin. Yan panelleri gizleyerek tuvali tüm ekrana yayabilirsiniz.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Wide Canvas Mode Toggle Button (Tasarım Alanını Genişlet) */}
+          <button
+            type="button"
+            onClick={() => {
+              const nextMode = !isWideMode;
+              setIsWideMode(nextMode);
+              if (nextMode) {
+                setShowLeftPanel(false);
+                setShowRightPanel(false);
+              } else {
+                setShowLeftPanel(true);
+                setShowRightPanel(true);
+              }
+            }}
+            className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+              isWideMode
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-2 ring-blue-400'
+                : 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/15'
+            }`}
+            title="Tasarım tuvalini tam ekran genişliğinde açın"
+          >
+            <Monitor className="w-4 h-4 text-gold" />
+            <span>{isWideMode ? 'Standart Görünüm' : '⛶ Geniş Tuval Modu'}</span>
+          </button>
+
           {/* Lock / Unlock Toggle Button */}
           <button
             type="button"
             onClick={() => setIsLocked(!isLocked)}
-            className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+            className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
               isLocked
                 ? 'bg-amber-500/20 text-amber-300 border-2 border-amber-500/60 shadow-lg shadow-amber-500/15 ring-2 ring-amber-500/30'
                 : 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/15 hover:border-gold'
@@ -414,272 +501,302 @@ export default function FloorPlanDesigner({
         </div>
       )}
 
-      {/* Main Workspace Layout (Left: Palette, Center: Infinite/Zoomable Canvas, Right: Inspector) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      {/* Main Workspace Layout (Flexible / Collapsible for Maximum Width) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         
-        {/* LEFT PANEL: Asset Palette (3 cols) */}
-        <div className="lg:col-span-3 space-y-4">
-          <div className="luxury-card p-5 rounded-3xl border border-meyhane-border space-y-4 shadow-xl">
-            
-            {/* Category Tabs */}
-            <div className="flex items-center gap-1 p-1 rounded-2xl bg-meyhane-bg border border-meyhane-border text-[11px] font-semibold">
-              <button
-                type="button"
-                onClick={() => setActiveAssetTab('tables')}
-                className={`flex-1 py-1.5 px-2 rounded-xl text-center transition-all ${
-                  activeAssetTab === 'tables' ? 'bg-gold text-black shadow-md' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                Masalar
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveAssetTab('architectural')}
-                className={`flex-1 py-1.5 px-2 rounded-xl text-center transition-all ${
-                  activeAssetTab === 'architectural' ? 'bg-gold text-black shadow-md' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                Mimari &amp; Kroki
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveAssetTab('custom')}
-                className={`flex-1 py-1.5 px-2 rounded-xl text-center transition-all ${
-                  activeAssetTab === 'custom' ? 'bg-gold text-black shadow-md' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                + Özel Çiz
-              </button>
-            </div>
+        {/* LEFT PANEL: Asset Palette (Col-span 3 when open) */}
+        {showLeftPanel && !isWideMode && (
+          <div className="lg:col-span-3 space-y-4 animate-fadeIn">
+            <div className="luxury-card p-5 rounded-3xl border border-meyhane-border space-y-4 shadow-xl">
+              
+              {/* Panel Header with close button */}
+              <div className="flex items-center justify-between border-b border-meyhane-border/70 pb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-gold font-serif flex items-center gap-1.5">
+                  <Plus className="w-4 h-4" />
+                  <span>Varlık Ekle</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowLeftPanel(false)}
+                  className="p-1 text-gray-400 hover:text-white rounded-lg hover:bg-white/5"
+                  title="Sol Paneli Gizle (Alanı Genişlet)"
+                >
+                  <PanelLeftClose className="w-4 h-4" />
+                </button>
+              </div>
 
-            {/* TAB 1: MASALAR */}
-            {activeAssetTab === 'tables' && (
-              <div className="space-y-3 animate-fadeIn">
-                <p className="text-[11px] text-meyhane-muted">
-                  Şablona tıklayarak salona anında yeni masa ekleyin veya özel masa oluşturun:
-                </p>
+              {/* Category Tabs */}
+              <div className="flex items-center gap-1 p-1 rounded-2xl bg-meyhane-bg border border-meyhane-border text-[11px] font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setActiveAssetTab('tables')}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-center transition-all ${
+                    activeAssetTab === 'tables' ? 'bg-gold text-black shadow-md' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Masalar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAssetTab('architectural')}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-center transition-all ${
+                    activeAssetTab === 'architectural' ? 'bg-gold text-black shadow-md' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Mimari
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveAssetTab('custom')}
+                  className={`flex-1 py-1.5 px-2 rounded-xl text-center transition-all ${
+                    activeAssetTab === 'custom' ? 'bg-gold text-black shadow-md' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  + Özel Çiz
+                </button>
+              </div>
 
-                {/* Templates */}
-                <div className="space-y-2">
-                  {tableTemplates.map((template, idx) => {
-                    const IconComponent = template.icon;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => addTableFromTemplate(template)}
-                        disabled={isLocked}
-                        className="w-full p-2.5 rounded-2xl bg-meyhane-bg/70 hover:bg-white/10 border border-meyhane-border hover:border-gold text-left flex items-center justify-between group transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-gold/15 border border-gold/30 text-gold flex items-center justify-center">
-                            <IconComponent className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <div className="text-xs font-semibold text-white group-hover:text-gold transition-colors">
-                              {template.name}
+              {/* TAB 1: MASALAR */}
+              {activeAssetTab === 'tables' && (
+                <div className="space-y-3 animate-fadeIn">
+                  <p className="text-[11px] text-meyhane-muted">
+                    Şablona tıklayarak salona anında yeni masa ekleyin:
+                  </p>
+
+                  <div className="space-y-2">
+                    {tableTemplates.map((template, idx) => {
+                      const IconComponent = template.icon;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => addTableFromTemplate(template)}
+                          disabled={isLocked}
+                          className="w-full p-2.5 rounded-2xl bg-meyhane-bg/70 hover:bg-white/10 border border-meyhane-border hover:border-gold text-left flex items-center justify-between group transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-xl bg-gold/15 border border-gold/30 text-gold flex items-center justify-center">
+                              <IconComponent className="w-4 h-4" />
                             </div>
-                            <div className="text-[10px] text-meyhane-muted">
-                              {template.capacity} Kişilik Kapasite
+                            <div>
+                              <div className="text-xs font-semibold text-white group-hover:text-gold transition-colors">
+                                {template.name}
+                              </div>
+                              <div className="text-[10px] text-meyhane-muted">
+                                {template.capacity} Kişilik Kapasite
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <Plus className="w-4 h-4 text-gray-500 group-hover:text-gold" />
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Quick Add Custom Table Form */}
-                <form onSubmit={handleAddCustomTable} className="pt-3 border-t border-meyhane-border/70 space-y-2.5 text-xs">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-gold font-serif">
-                    Hızlı Masa Oluştur
+                          <Plus className="w-4 h-4 text-gray-500 group-hover:text-gold" />
+                        </button>
+                      );
+                    })}
                   </div>
-                  <input
-                    type="text"
-                    value={quickTableNum}
-                    onChange={(e) => setQuickTableNum(e.target.value)}
-                    placeholder="Masa Adı / No (örn: Masa 48)"
-                    className="w-full bg-meyhane-bg border border-meyhane-border px-3 py-2 rounded-xl text-white text-xs focus:border-gold focus:outline-none"
-                  />
-                  <div className="grid grid-cols-2 gap-2">
+
+                  {/* Quick Add Custom Table Form */}
+                  <form onSubmit={handleAddCustomTable} className="pt-3 border-t border-meyhane-border/70 space-y-2.5 text-xs">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-gold font-serif">
+                      Hızlı Masa Oluştur
+                    </div>
                     <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={quickTableCap}
-                      onChange={(e) => setQuickTableCap(parseInt(e.target.value) || 2)}
-                      placeholder="Kapasite"
-                      className="bg-meyhane-bg border border-meyhane-border px-3 py-2 rounded-xl text-white text-xs font-bold text-gold"
+                      type="text"
+                      value={quickTableNum}
+                      onChange={(e) => setQuickTableNum(e.target.value)}
+                      placeholder="Masa Adı / No (örn: Masa 48)"
+                      className="w-full bg-meyhane-bg border border-meyhane-border px-3 py-2 rounded-xl text-white text-xs focus:border-gold focus:outline-none"
                     />
-                    <select
-                      value={quickTableSec}
-                      onChange={(e) => setQuickTableSec(e.target.value as any)}
-                      className="bg-meyhane-bg border border-meyhane-border px-2 py-2 rounded-xl text-white text-[11px] focus:border-gold focus:outline-none"
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={quickTableCap}
+                        onChange={(e) => setQuickTableCap(parseInt(e.target.value) || 2)}
+                        placeholder="Kapasite"
+                        className="bg-meyhane-bg border border-meyhane-border px-3 py-2 rounded-xl text-white text-xs font-bold text-gold"
+                      />
+                      <select
+                        value={quickTableSec}
+                        onChange={(e) => setQuickTableSec(e.target.value as any)}
+                        className="bg-meyhane-bg border border-meyhane-border px-2 py-2 rounded-xl text-white text-[11px] focus:border-gold focus:outline-none"
+                      >
+                        <option value="vip_sahne">VIP Sahne</option>
+                        <option value="salon">Orta Salon</option>
+                        <option value="bahce">Bahçe</option>
+                        <option value="loca">Özel Loca</option>
+                      </select>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isLocked}
+                      className="w-full py-2 px-3 rounded-xl bg-white/5 hover:bg-gold hover:text-black border border-meyhane-border hover:border-gold text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
                     >
-                      <option value="vip_sahne">VIP Sahne</option>
-                      <option value="salon">Orta Salon</option>
-                      <option value="bahce">Bahçe</option>
-                      <option value="loca">Özel Loca</option>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Masayı Tuvale Ekle</span>
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {/* TAB 2: MİMARİ & KROKİ ÖĞELERİ */}
+              {activeAssetTab === 'architectural' && (
+                <div className="space-y-3 animate-fadeIn">
+                  <p className="text-[11px] text-meyhane-muted">
+                    İşletmenizin krokisini çizer gibi Sahne, Bar, WC, Giriş ve Çıkış kapılarını ekleyin:
+                  </p>
+
+                  <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                    {architecturalTemplates.map((item, idx) => {
+                      const IconComponent = item.icon;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => addArchitecturalElement(item)}
+                          disabled={isLocked}
+                          className="w-full p-2.5 rounded-2xl bg-meyhane-bg/70 hover:bg-white/10 border border-meyhane-border hover:border-gold text-left flex items-center justify-between group transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-xl bg-gold/15 border border-gold/30 text-gold flex items-center justify-center flex-shrink-0">
+                              <IconComponent className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <div className="text-xs font-semibold text-white group-hover:text-gold transition-colors">
+                                {item.name}
+                              </div>
+                              <div className="text-[10px] text-meyhane-muted line-clamp-1">
+                                {item.desc}
+                              </div>
+                            </div>
+                          </div>
+                          <Plus className="w-4 h-4 text-gray-500 group-hover:text-gold flex-shrink-0" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: ÖZEL VARLIK ÇİZ */}
+              {activeAssetTab === 'custom' && (
+                <form onSubmit={handleAddCustomAsset} className="space-y-3 animate-fadeIn text-xs">
+                  <p className="text-[11px] text-meyhane-muted">
+                    Kendi özel alanınızı çizin (DJ kabini, sigara balkonu, vestiyer vb.):
+                  </p>
+
+                  <div className="space-y-1">
+                    <label className="text-gray-300 font-semibold">Varlık / Alan Adı</label>
+                    <input
+                      type="text"
+                      required
+                      value={customAssetName}
+                      onChange={(e) => setCustomAssetName(e.target.value)}
+                      placeholder="örn: DJ Kabini &amp; Işık Masası"
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white text-xs focus:border-gold focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-gray-300 font-semibold">Varlık Türü / Şekli</label>
+                    <select
+                      value={customAssetType}
+                      onChange={(e) => setCustomAssetType(e.target.value as any)}
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white text-xs focus:border-gold focus:outline-none"
+                    >
+                      <option value="custom">Özel Mimari Bölme</option>
+                      <option value="stage">Sahne / Podyum</option>
+                      <option value="bar">Bar Alanı</option>
+                      <option value="entrance">Giriş Kapısı</option>
+                      <option value="exit">Çıkış Kapısı</option>
+                      <option value="wc">WC / Tuvalet</option>
+                      <option value="cashier">Kasa / Banko</option>
+                      <option value="kitchen">Mutfak</option>
+                      <option value="column">Kolon / Direk</option>
                     </select>
                   </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-gray-300 text-[11px]">Genişlik (%)</label>
+                      <input
+                        type="number"
+                        min={4}
+                        max={70}
+                        value={customAssetWidth}
+                        onChange={(e) => setCustomAssetWidth(parseInt(e.target.value) || 10)}
+                        className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-gray-300 text-[11px]">Yükseklik (%)</label>
+                      <input
+                        type="number"
+                        min={3}
+                        max={60}
+                        value={customAssetHeight}
+                        onChange={(e) => setCustomAssetHeight(parseInt(e.target.value) || 8)}
+                        className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-gray-300 text-[11px]">Renk Teması</label>
+                    <div className="flex items-center gap-2">
+                      {[
+                        { id: 'gold', bg: 'bg-amber-500' },
+                        { id: 'emerald', bg: 'bg-emerald-500' },
+                        { id: 'blue', bg: 'bg-blue-500' },
+                        { id: 'purple', bg: 'bg-purple-500' },
+                        { id: 'red', bg: 'bg-red-500' },
+                        { id: 'gray', bg: 'bg-slate-500' },
+                      ].map(c => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setCustomAssetColor(c.id)}
+                          className={`w-6 h-6 rounded-full ${c.bg} transition-all ${
+                            customAssetColor === c.id ? 'ring-2 ring-white scale-125' : 'opacity-60 hover:opacity-100'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
                   <button
                     type="submit"
                     disabled={isLocked}
-                    className="w-full py-2 px-3 rounded-xl bg-white/5 hover:bg-gold hover:text-black border border-meyhane-border hover:border-gold text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                    className="w-full py-2.5 px-3 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider hover:brightness-110 shadow-md flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Masayı Tuvale Ekle</span>
+                    <Plus className="w-4 h-4" />
+                    <span>Varlığı Tuvale Ekle</span>
                   </button>
                 </form>
-              </div>
-            )}
+              )}
 
-            {/* TAB 2: MİMARİ & KROKİ ÖĞELERİ */}
-            {activeAssetTab === 'architectural' && (
-              <div className="space-y-3 animate-fadeIn">
-                <p className="text-[11px] text-meyhane-muted">
-                  İşletmenizin krokisini çizer gibi Sahne, Bar, WC, Giriş ve Çıkış kapılarını ekleyin:
-                </p>
-
-                <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
-                  {architecturalTemplates.map((item, idx) => {
-                    const IconComponent = item.icon;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => addArchitecturalElement(item)}
-                        disabled={isLocked}
-                        className="w-full p-2.5 rounded-2xl bg-meyhane-bg/70 hover:bg-white/10 border border-meyhane-border hover:border-gold text-left flex items-center justify-between group transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-gold/15 border border-gold/30 text-gold flex items-center justify-center flex-shrink-0">
-                            <IconComponent className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <div className="text-xs font-semibold text-white group-hover:text-gold transition-colors">
-                              {item.name}
-                            </div>
-                            <div className="text-[10px] text-meyhane-muted line-clamp-1">
-                              {item.desc}
-                            </div>
-                          </div>
-                        </div>
-                        <Plus className="w-4 h-4 text-gray-500 group-hover:text-gold flex-shrink-0" />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* TAB 3: ÖZEL VARLIK ÇİZ */}
-            {activeAssetTab === 'custom' && (
-              <form onSubmit={handleAddCustomAsset} className="space-y-3 animate-fadeIn text-xs">
-                <p className="text-[11px] text-meyhane-muted">
-                  Kendi özel alanınızı çizin (DJ kabini, sigara balkonu, vestiyer, protokol kapısı vb.):
-                </p>
-
-                <div className="space-y-1">
-                  <label className="text-gray-300 font-semibold">Varlık / Alan Adı</label>
-                  <input
-                    type="text"
-                    required
-                    value={customAssetName}
-                    onChange={(e) => setCustomAssetName(e.target.value)}
-                    placeholder="örn: DJ Kabini &amp; Işık Masası"
-                    className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white text-xs focus:border-gold focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-gray-300 font-semibold">Varlık Türü / Şekli</label>
-                  <select
-                    value={customAssetType}
-                    onChange={(e) => setCustomAssetType(e.target.value as any)}
-                    className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white text-xs focus:border-gold focus:outline-none"
-                  >
-                    <option value="custom">Özel Mimari Bölme</option>
-                    <option value="stage">Sahne / Podyum</option>
-                    <option value="bar">Bar Alanı</option>
-                    <option value="entrance">Giriş Kapısı</option>
-                    <option value="exit">Çıkış Kapısı</option>
-                    <option value="wc">WC / Tuvalet</option>
-                    <option value="cashier">Kasa / Banko</option>
-                    <option value="kitchen">Mutfak</option>
-                    <option value="column">Kolon / Direk</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-gray-300 text-[11px]">Genişlik (%)</label>
-                    <input
-                      type="number"
-                      min={4}
-                      max={70}
-                      value={customAssetWidth}
-                      onChange={(e) => setCustomAssetWidth(parseInt(e.target.value) || 10)}
-                      className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-gray-300 text-[11px]">Yükseklik (%)</label>
-                    <input
-                      type="number"
-                      min={3}
-                      max={60}
-                      value={customAssetHeight}
-                      onChange={(e) => setCustomAssetHeight(parseInt(e.target.value) || 8)}
-                      className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-gray-300 text-[11px]">Renk Teması</label>
-                  <div className="flex items-center gap-2">
-                    {[
-                      { id: 'gold', bg: 'bg-amber-500' },
-                      { id: 'emerald', bg: 'bg-emerald-500' },
-                      { id: 'blue', bg: 'bg-blue-500' },
-                      { id: 'purple', bg: 'bg-purple-500' },
-                      { id: 'red', bg: 'bg-red-500' },
-                      { id: 'gray', bg: 'bg-slate-500' },
-                    ].map(c => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => setCustomAssetColor(c.id)}
-                        className={`w-6 h-6 rounded-full ${c.bg} transition-all ${
-                          customAssetColor === c.id ? 'ring-2 ring-white scale-125' : 'opacity-60 hover:opacity-100'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isLocked}
-                  className="w-full py-2.5 px-3 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider hover:brightness-110 shadow-md flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Varlığı Tuvale Ekle</span>
-                </button>
-              </form>
-            )}
-
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* CENTER PANEL: Large Virtual Zoomable Canvas (6 cols) */}
-        <div className="lg:col-span-6 space-y-3">
+        {/* CENTER PANEL: Expanded Zoomable Canvas (Dynamic width: 6 to 12 cols!) */}
+        <div className={`${centerColSpan} space-y-3 transition-all duration-300`}>
           
-          {/* Zoom & Navigation Toolbar */}
+          {/* Zoom, Pan, View & Navigation Toolbar */}
           <div className="p-3 rounded-2xl bg-meyhane-surface/90 border border-meyhane-border flex flex-wrap items-center justify-between gap-3 text-xs shadow-lg">
             
+            {/* Left Drawer Toggle (when hidden) */}
+            {!showLeftPanel && !isWideMode && (
+              <button
+                type="button"
+                onClick={() => setShowLeftPanel(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-gold/15 text-gold border border-gold/30 hover:bg-gold hover:text-black text-xs font-semibold flex items-center gap-1.5 transition-all"
+                title="Varlık Ekle Panelini Aç"
+              >
+                <PanelLeftOpen className="w-4 h-4" />
+                <span>+ Varlık Ekle</span>
+              </button>
+            )}
+
             {/* Zoom Controls */}
             <div className="flex items-center gap-1.5">
               <span className="text-gray-400 font-semibold mr-1 flex items-center gap-1">
@@ -705,11 +822,25 @@ export default function FloorPlanDesigner({
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
+              
+              {/* Presets */}
+              <button
+                type="button"
+                onClick={() => setZoom(0.75)}
+                className={`px-2 py-1 rounded-lg text-[11px] transition-colors ${
+                  zoom === 0.75 ? 'bg-gold text-black font-bold' : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                }`}
+                title="Geniş Salon Görünümü (%75)"
+              >
+                %75
+              </button>
               <button
                 type="button"
                 onClick={handleResetZoom}
-                className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-[11px] transition-colors"
-                title="Normal Boyuta Getir (%100)"
+                className={`px-2 py-1 rounded-lg text-[11px] transition-colors ${
+                  zoom === 1.0 ? 'bg-gold text-black font-bold' : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                }`}
+                title="Birebir Doğal Boyut (%100)"
               >
                 %100
               </button>
@@ -764,6 +895,20 @@ export default function FloorPlanDesigner({
               </button>
             </div>
 
+            {/* Right Drawer Toggle (when hidden) */}
+            {!showRightPanel && !isWideMode && (
+              <button
+                type="button"
+                onClick={() => setShowRightPanel(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-gold/15 text-gold border border-gold/30 hover:bg-gold hover:text-black text-xs font-semibold flex items-center gap-1.5 transition-all"
+                title="Masa Özellikleri Panelini Aç"
+              >
+                <Sliders className="w-4 h-4" />
+                <span>Özellikler</span>
+                <PanelRightOpen className="w-4 h-4" />
+              </button>
+            )}
+
           </div>
 
           {/* Locked Notification Banner */}
@@ -776,10 +921,12 @@ export default function FloorPlanDesigner({
             </div>
           )}
 
-          {/* Canvas Scroll Viewport Container */}
+          {/* Canvas Scroll Viewport Container (Taller, highly spacious viewport) */}
           <div
             ref={scrollContainerRef}
-            className="relative rounded-3xl bg-[#07090D] border-2 border-meyhane-border/90 shadow-2xl overflow-auto max-h-[640px] select-none scrollbar-thin scrollbar-thumb-gold/30 scrollbar-track-transparent"
+            className={`relative rounded-3xl bg-[#07090D] border-2 border-meyhane-border/90 shadow-2xl overflow-auto select-none scrollbar-thin scrollbar-thumb-gold/30 scrollbar-track-transparent ${
+              isWideMode ? 'h-[78vh]' : 'h-[720px]'
+            }`}
           >
             {/* Scaled Wrapper to maintain native scroll dimensions */}
             <div
@@ -789,9 +936,10 @@ export default function FloorPlanDesigner({
               }}
               className="relative"
             >
-              {/* Virtual Infinite Canvas (2200px x 1400px transformed by zoom) */}
+              {/* Virtual Infinite Canvas (2400px x 1500px transformed by zoom) */}
               <div
                 ref={canvasInnerRef}
+                onMouseDown={handleCanvasMouseDown}
                 onMouseMove={handleCanvasMouseMove}
                 onMouseUp={handleCanvasMouseUp}
                 onMouseLeave={handleCanvasMouseUp}
@@ -802,7 +950,7 @@ export default function FloorPlanDesigner({
                   transformOrigin: 'top left',
                 }}
                 className={`relative bg-[#090C10] ${
-                  isLocked ? 'cursor-default' : 'cursor-crosshair'
+                  isPanning ? 'cursor-grabbing' : isLocked ? 'cursor-default' : 'cursor-grab'
                 }`}
               >
                 {/* Architectural Blueprint Grid Background */}
@@ -875,13 +1023,19 @@ export default function FloorPlanDesigner({
                           : 'z-10 hover:brightness-110'
                       }`}
                     >
-                      <div className="flex items-center gap-2 mb-1">
+                      <div 
+                        style={{ transform: `scale(${textScale})`, transformOrigin: 'center' }}
+                        className="flex items-center gap-2 mb-1"
+                      >
                         {getElementIcon()}
                         <span className="text-xs font-bold font-serif uppercase tracking-wider truncate max-w-[90%]">
                           {el.name}
                         </span>
                       </div>
-                      <span className="text-[10px] opacity-75 uppercase font-mono tracking-widest">
+                      <span 
+                        style={{ transform: `scale(${Math.min(1.4, textScale)})`, transformOrigin: 'center' }}
+                        className="text-[10px] opacity-75 uppercase font-mono tracking-widest"
+                      >
                         {el.type === 'stage' ? '♫ Canlı Fasıl & Gala ♫' :
                          el.type === 'entrance' ? '➔ Ana Müşteri Girişi' :
                          el.type === 'exit' ? '➔ Acil Yangın Çıkışı' :
@@ -892,7 +1046,7 @@ export default function FloorPlanDesigner({
                   );
                 })}
 
-                {/* DRAGGABLE TABLES (UP TO 200 TABLES) */}
+                {/* DRAGGABLE TABLES WITH DYNAMIC ANTI-SHRINK ADAPTIVE FONT SCALING (UP TO 200 TABLES) */}
                 {tables.map((table) => {
                   const isSelected = selectedItem?.type === 'table' && selectedItem.id === table.id;
                   const isVIP = table.sectionId === 'vip_sahne';
@@ -903,30 +1057,49 @@ export default function FloorPlanDesigner({
                     <div
                       key={table.id}
                       onMouseDown={(e) => handleMouseDownItem('table', table.id, e)}
+                      onMouseEnter={() => setHoveredTable(table)}
+                      onMouseLeave={() => setHoveredTable(null)}
                       style={{
                         left: `${table.posX}%`,
                         top: `${table.posY}%`,
                         transform: 'translate(-50%, -50%)',
+                        minWidth: `${tableMinW}px`,
+                        minHeight: `${tableMinH}px`,
                       }}
-                      className={`absolute p-3 rounded-2xl border-2 transition-all flex flex-col items-center justify-center text-center shadow-lg ${
+                      className={`absolute p-2.5 rounded-2xl border-2 transition-all flex flex-col items-center justify-center text-center shadow-lg select-none ${
                         isLocked ? 'cursor-pointer' : 'cursor-move'
                       } ${
                         isSelected
                           ? 'ring-4 ring-gold border-gold bg-gold text-black scale-110 z-30 shadow-2xl font-bold'
                           : isVIP
-                          ? 'border-amber-400/80 bg-amber-950/80 text-amber-200 z-20 hover:scale-105'
+                          ? 'border-amber-400/80 bg-amber-950/85 text-amber-200 z-20 hover:scale-105'
                           : isLoca
-                          ? 'border-purple-400/80 bg-purple-950/80 text-purple-200 z-20 hover:scale-105'
+                          ? 'border-purple-400/80 bg-purple-950/85 text-purple-200 z-20 hover:scale-105'
                           : isBahce
-                          ? 'border-teal-400/80 bg-teal-950/80 text-teal-200 z-20 hover:scale-105'
-                          : 'border-emerald-500/70 bg-[#10141D] text-white z-20 hover:scale-105 hover:border-gold'
+                          ? 'border-teal-400/80 bg-teal-950/85 text-teal-200 z-20 hover:scale-105'
+                          : 'border-emerald-500/70 bg-[#0E131C] text-white z-20 hover:scale-105 hover:border-gold'
                       }`}
                     >
-                      <div className="text-xs font-bold font-serif whitespace-nowrap">
+                      {/* ANTI-SHRINK TABLE NUMBER (Counter-scaled so it remains 100% readable even at 45% zoom!) */}
+                      <div 
+                        style={{ 
+                          transform: `scale(${textScale})`, 
+                          transformOrigin: 'center',
+                        }}
+                        className="text-xs font-bold font-serif whitespace-nowrap px-1"
+                      >
                         {table.number}
                       </div>
-                      <div className="text-[10px] opacity-80 whitespace-nowrap">
-                        {table.capacity}p
+
+                      {/* Capacity badge */}
+                      <div 
+                        style={{ 
+                          transform: `scale(${Math.min(1.4, textScale)})`, 
+                          transformOrigin: 'center',
+                        }}
+                        className="text-[10px] opacity-80 whitespace-nowrap mt-0.5"
+                      >
+                        {table.capacity} Kişi
                       </div>
                     </div>
                   );
@@ -934,280 +1107,351 @@ export default function FloorPlanDesigner({
 
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* RIGHT PANEL: Dynamic Inspector (Tables & Architectural Elements) (3 cols) */}
-        <div className="lg:col-span-3 space-y-4">
-          <div className="luxury-card p-5 rounded-3xl border border-meyhane-border space-y-4 shadow-xl">
-            
-            {/* INSPECTOR TITLE */}
-            <div className="text-xs font-bold uppercase tracking-wider text-gold font-serif border-b border-meyhane-border/70 pb-2 flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Sliders className="w-4 h-4 text-gold" />
-                <span>
-                  {selectedItem?.type === 'element'
-                    ? 'Mimari Varlık Ayarları'
-                    : selectedItem?.type === 'table'
-                    ? 'Masa Özellikleri'
-                    : 'Öğe Denetleyicisi'}
-                </span>
-              </div>
-              {selectedItem && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedItem(null)}
-                  className="text-gray-400 hover:text-white p-1"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* 1. TABLE INSPECTOR */}
-            {currentTable ? (
-              <div className="space-y-3.5 text-xs">
-                <div className="space-y-1">
-                  <label className="text-gray-300 font-semibold">Masa Adı / No</label>
-                  <input
-                    type="text"
-                    disabled={isLocked}
-                    value={currentTable.number}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setTables(prev => prev.map(t => t.id === currentTable.id ? { ...t, number: val } : t));
-                    }}
-                    className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none font-medium disabled:opacity-60"
-                  />
+            {/* FLOATING HOVER MAGNIFIER BADGE (Guarantees crystal-clear reading of any table hovered at any zoom level!) */}
+            {hoveredTable && (
+              <div className="absolute top-4 left-4 z-40 p-3 rounded-2xl bg-black/90 border border-gold/70 shadow-2xl backdrop-blur-md text-xs animate-fadeIn flex items-center gap-3 pointer-events-none">
+                <div className="w-8 h-8 rounded-xl bg-gold text-black font-bold flex items-center justify-center font-serif text-sm">
+                  {hoveredTable.capacity}p
                 </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="space-y-1">
-                    <label className="text-gray-300 font-semibold">Kapasite</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      disabled={isLocked}
-                      value={currentTable.capacity}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value) || 1;
-                        setTables(prev => prev.map(t => t.id === currentTable.id ? { ...t, capacity: val } : t));
-                      }}
-                      className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white font-bold text-gold disabled:opacity-60"
-                    />
+                <div>
+                  <div className="font-bold text-white text-sm">
+                    {hoveredTable.number}
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-gray-300 font-semibold">Min Kişi</label>
-                    <input
-                      type="number"
-                      min={1}
-                      disabled={isLocked}
-                      value={currentTable.minGuests}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value) || 1;
-                        setTables(prev => prev.map(t => t.id === currentTable.id ? { ...t, minGuests: val } : t));
-                      }}
-                      className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white disabled:opacity-60"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-gray-300 font-semibold">Salon Bölgesi</label>
-                  <select
-                    disabled={isLocked}
-                    value={currentTable.sectionId}
-                    onChange={(e) => {
-                      const val = e.target.value as any;
-                      setTables(prev => prev.map(t => t.id === currentTable.id ? { ...t, sectionId: val } : t));
-                    }}
-                    className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white focus:border-gold focus:outline-none disabled:opacity-60"
-                  >
-                    <option value="vip_sahne">VIP Sahne Önü</option>
-                    <option value="salon">Orta Salon</option>
-                    <option value="bahce">Bahçe &amp; Teras</option>
-                    <option value="loca">Özel Loca</option>
-                  </select>
-                </div>
-
-                {/* Coordinate location */}
-                <div className="p-2.5 rounded-xl bg-meyhane-bg border border-meyhane-border/70 flex items-center justify-between text-[11px] text-gray-400">
-                  <span>Tuval Konumu:</span>
-                  <span className="font-mono text-gold font-semibold">X: %{currentTable.posX} • Y: %{currentTable.posY}</span>
-                </div>
-
-                {/* Adjacent tables connection for smart merge */}
-                <div className="space-y-1 pt-1">
-                  <label className="text-gray-300 font-semibold">Birleştirilebilir Komşular</label>
-                  <div className="max-h-28 overflow-y-auto space-y-1 p-2 rounded-xl bg-meyhane-bg border border-meyhane-border">
-                    {tables.filter(t => t.id !== currentTable.id).map(other => {
-                      const isChecked = currentTable.adjacentWith.includes(other.id);
-                      return (
-                        <label key={other.id} className="flex items-center gap-2 text-[11px] text-gray-300 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            disabled={isLocked}
-                            checked={isChecked}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setTables(prev => prev.map(t => {
-                                if (t.id === currentTable.id) {
-                                  const newAdj = checked
-                                    ? [...t.adjacentWith, other.id]
-                                    : t.adjacentWith.filter(x => x !== other.id);
-                                  return { ...t, adjacentWith: newAdj };
-                                }
-                                return t;
-                              }));
-                            }}
-                            className="rounded text-gold focus:ring-gold"
-                          />
-                          <span>{other.number} ({other.capacity}p)</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    disabled={isLocked}
-                    onClick={handleDeleteSelected}
-                    className="w-full py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 text-red-300 border border-red-500/40 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>Bu Masayı Sil</span>
-                  </button>
-                </div>
-              </div>
-            ) : currentElement ? (
-              /* 2. ARCHITECTURAL ELEMENT INSPECTOR */
-              <div className="space-y-3.5 text-xs animate-fadeIn">
-                <div className="space-y-1">
-                  <label className="text-gray-300 font-semibold">Varlık / Kroki Başlığı</label>
-                  <input
-                    type="text"
-                    disabled={isLocked}
-                    value={currentElement.name}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setElements(prev => prev.map(el => el.id === currentElement.id ? { ...el, name: val } : el));
-                    }}
-                    className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none font-medium disabled:opacity-60"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-gray-300 font-semibold">Varlık Türü</label>
-                  <select
-                    disabled={isLocked}
-                    value={currentElement.type}
-                    onChange={(e) => {
-                      const val = e.target.value as any;
-                      setElements(prev => prev.map(el => el.id === currentElement.id ? { ...el, type: val } : el));
-                    }}
-                    className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white focus:border-gold focus:outline-none disabled:opacity-60"
-                  >
-                    <option value="stage">🎤 Canlı Sahne &amp; Fasıl Platformu</option>
-                    <option value="bar">🍸 Kokteyl &amp; Rakı Barı</option>
-                    <option value="entrance">🚪 Ana Müşteri Giriş Kapısı</option>
-                    <option value="exit">🚪 Acil Çıkış / Yangın Kapısı</option>
-                    <option value="wc">🚻 Bay &amp; Bayan WC</option>
-                    <option value="cashier">💳 Kasa &amp; Banko</option>
-                    <option value="kitchen">🍽️ Mutfak &amp; Servis</option>
-                    <option value="column">🏛️ Taşıyıcı Kolon / Direk</option>
-                    <option value="wine">🍷 Şarap Kavı</option>
-                    <option value="custom">✨ Özel Kroki Alanı</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="space-y-1">
-                    <label className="text-gray-300 text-[11px] font-semibold">Genişlik (%)</label>
-                    <input
-                      type="number"
-                      min={4}
-                      max={80}
-                      disabled={isLocked}
-                      value={currentElement.width || 12}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value) || 6;
-                        setElements(prev => prev.map(el => el.id === currentElement.id ? { ...el, width: val } : el));
-                      }}
-                      className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white font-bold disabled:opacity-60"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-gray-300 text-[11px] font-semibold">Yükseklik (%)</label>
-                    <input
-                      type="number"
-                      min={3}
-                      max={70}
-                      disabled={isLocked}
-                      value={currentElement.height || 10}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value) || 5;
-                        setElements(prev => prev.map(el => el.id === currentElement.id ? { ...el, height: val } : el));
-                      }}
-                      className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white font-bold disabled:opacity-60"
-                    />
-                  </div>
-                </div>
-
-                {/* Coordinate location */}
-                <div className="p-2.5 rounded-xl bg-meyhane-bg border border-meyhane-border/70 flex items-center justify-between text-[11px] text-gray-400">
-                  <span>Tuval Konumu:</span>
-                  <span className="font-mono text-gold font-semibold">X: %{currentElement.posX} • Y: %{currentElement.posY}</span>
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    disabled={isLocked}
-                    onClick={handleDeleteSelected}
-                    className="w-full py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 text-red-300 border border-red-500/40 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>Bu Varlığı Sil</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* 3. DEFAULT INSPECTOR STATE */
-              <div className="py-8 text-center text-meyhane-muted text-xs space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-gold mx-auto flex items-center justify-center">
-                  <Eye className="w-6 h-6 opacity-70" />
-                </div>
-                <p>
-                  Düzenlemek için tuval üzerindeki herhangi bir <strong>masaya</strong> veya <strong>mimari öğeye</strong> (Sahne, Bar, WC, Kapı vb.) tıklayın.
-                </p>
-                <div className="pt-4 border-t border-meyhane-border/60 text-left space-y-2 text-[11px]">
-                  <div className="flex items-center justify-between text-gray-400">
-                    <span>Toplam Masa Sayısı:</span>
-                    <strong className="text-white">{tables.length}</strong>
-                  </div>
-                  <div className="flex items-center justify-between text-gray-400">
-                    <span>Toplam Kapasite:</span>
-                    <strong className="text-gold">{totalCapacity} Kişi</strong>
-                  </div>
-                  <div className="flex items-center justify-between text-gray-400">
-                    <span>Mimari Kroki Öğeleri:</span>
-                    <strong className="text-emerald-400">{elements.length} Öğe</strong>
-                  </div>
-                  <div className="flex items-center justify-between text-gray-400">
-                    <span>Düzenleme Durumu:</span>
-                    <strong className={isLocked ? 'text-amber-400' : 'text-emerald-400'}>
-                      {isLocked ? '🔒 Kilitli' : '🔓 Düzenlenebilir'}
-                    </strong>
+                  <div className="text-[11px] text-gold font-medium">
+                    {hoveredTable.sectionId === 'vip_sahne' ? 'VIP Sahne Önü' :
+                     hoveredTable.sectionId === 'salon' ? 'Orta Salon' :
+                     hoveredTable.sectionId === 'loca' ? 'Özel Loca' : 'Bahçe / Teras'}
+                    {' '}• {hoveredTable.capacity} Kişilik Kapasite
                   </div>
                 </div>
               </div>
             )}
 
+            {/* FLOATING MINIMAP RADAR (Bottom right indicator) */}
+            <div className="absolute bottom-4 right-4 z-30 p-2 rounded-2xl bg-black/85 border border-white/15 backdrop-blur-md shadow-2xl hidden md:block">
+              <div className="text-[9px] uppercase tracking-wider text-gray-400 font-bold mb-1 flex items-center justify-between">
+                <span>Salon Radarı</span>
+                <span className="text-gold font-mono">%{Math.round(zoom * 100)}</span>
+              </div>
+              <div 
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const xPct = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+                  const yPct = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+                  scrollToZone(xPct, yPct);
+                }}
+                className="w-32 h-20 rounded-xl bg-meyhane-bg border border-meyhane-border relative cursor-pointer overflow-hidden group"
+                title="Radara tıklayarak salonda istediğiniz bölgeye anında zıplayın"
+              >
+                {/* Mini elements */}
+                <div className="absolute top-1 left-1/4 w-1/2 h-2 bg-gold/50 rounded-sm" />
+                <div className="absolute top-1/4 left-1 w-2 h-8 bg-emerald-500/50 rounded-sm" />
+                <div className="absolute top-1/4 right-1 w-2 h-8 bg-purple-500/50 rounded-sm" />
+                <div className="absolute bottom-1 left-1/3 w-1/3 h-2 bg-emerald-400/50 rounded-sm" />
+
+                {/* Mini tables cluster dots */}
+                {tables.slice(0, 30).map((t, i) => (
+                  <div
+                    key={i}
+                    style={{ left: `${t.posX}%`, top: `${t.posY}%` }}
+                    className="absolute w-1 h-1 rounded-full bg-gold/70"
+                  />
+                ))}
+
+                <div className="absolute inset-0 bg-gold/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[9px] text-gold font-semibold">
+                  Tıkla &amp; Odaklan
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
+
+        {/* RIGHT PANEL: Dynamic Inspector (Col-span 3 when open) */}
+        {showRightPanel && !isWideMode && (
+          <div className="lg:col-span-3 space-y-4 animate-fadeIn">
+            <div className="luxury-card p-5 rounded-3xl border border-meyhane-border space-y-4 shadow-xl">
+              
+              {/* INSPECTOR TITLE */}
+              <div className="text-xs font-bold uppercase tracking-wider text-gold font-serif border-b border-meyhane-border/70 pb-2 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Sliders className="w-4 h-4 text-gold" />
+                  <span>
+                    {selectedItem?.type === 'element'
+                      ? 'Mimari Varlık Ayarları'
+                      : selectedItem?.type === 'table'
+                      ? 'Masa Özellikleri'
+                      : 'Öğe Denetleyicisi'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  {selectedItem && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedItem(null)}
+                      className="text-gray-400 hover:text-white p-1"
+                      title="Seçimi Kaldır"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowRightPanel(false)}
+                    className="p-1 text-gray-400 hover:text-white rounded-lg hover:bg-white/5"
+                    title="Sağ Paneli Gizle (Alanı Genişlet)"
+                  >
+                    <PanelRightClose className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* 1. TABLE INSPECTOR */}
+              {currentTable ? (
+                <div className="space-y-3.5 text-xs">
+                  <div className="space-y-1">
+                    <label className="text-gray-300 font-semibold">Masa Adı / No</label>
+                    <input
+                      type="text"
+                      disabled={isLocked}
+                      value={currentTable.number}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTables(prev => prev.map(t => t.id === currentTable.id ? { ...t, number: val } : t));
+                      }}
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none font-medium disabled:opacity-60"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="text-gray-300 font-semibold">Kapasite</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        disabled={isLocked}
+                        value={currentTable.capacity}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 1;
+                          setTables(prev => prev.map(t => t.id === currentTable.id ? { ...t, capacity: val } : t));
+                        }}
+                        className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white font-bold text-gold disabled:opacity-60"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-gray-300 font-semibold">Min Kişi</label>
+                      <input
+                        type="number"
+                        min={1}
+                        disabled={isLocked}
+                        value={currentTable.minGuests}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 1;
+                          setTables(prev => prev.map(t => t.id === currentTable.id ? { ...t, minGuests: val } : t));
+                        }}
+                        className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white disabled:opacity-60"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-gray-300 font-semibold">Salon Bölgesi</label>
+                    <select
+                      disabled={isLocked}
+                      value={currentTable.sectionId}
+                      onChange={(e) => {
+                        const val = e.target.value as any;
+                        setTables(prev => prev.map(t => t.id === currentTable.id ? { ...t, sectionId: val } : t));
+                      }}
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white focus:border-gold focus:outline-none disabled:opacity-60"
+                    >
+                      <option value="vip_sahne">VIP Sahne Önü</option>
+                      <option value="salon">Orta Salon</option>
+                      <option value="bahce">Bahçe &amp; Teras</option>
+                      <option value="loca">Özel Loca</option>
+                    </select>
+                  </div>
+
+                  {/* Coordinate location */}
+                  <div className="p-2.5 rounded-xl bg-meyhane-bg border border-meyhane-border/70 flex items-center justify-between text-[11px] text-gray-400">
+                    <span>Tuval Konumu:</span>
+                    <span className="font-mono text-gold font-semibold">X: %{currentTable.posX} • Y: %{currentTable.posY}</span>
+                  </div>
+
+                  {/* Adjacent tables connection for smart merge */}
+                  <div className="space-y-1 pt-1">
+                    <label className="text-gray-300 font-semibold">Birleştirilebilir Komşular</label>
+                    <div className="max-h-28 overflow-y-auto space-y-1 p-2 rounded-xl bg-meyhane-bg border border-meyhane-border">
+                      {tables.filter(t => t.id !== currentTable.id).map(other => {
+                        const isChecked = currentTable.adjacentWith.includes(other.id);
+                        return (
+                          <label key={other.id} className="flex items-center gap-2 text-[11px] text-gray-300 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              disabled={isLocked}
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setTables(prev => prev.map(t => {
+                                  if (t.id === currentTable.id) {
+                                    const newAdj = checked
+                                      ? [...t.adjacentWith, other.id]
+                                      : t.adjacentWith.filter(x => x !== other.id);
+                                    return { ...t, adjacentWith: newAdj };
+                                  }
+                                  return t;
+                                }));
+                              }}
+                              className="rounded text-gold focus:ring-gold"
+                            />
+                            <span>{other.number} ({other.capacity}p)</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      disabled={isLocked}
+                      onClick={handleDeleteSelected}
+                      className="w-full py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 text-red-300 border border-red-500/40 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Bu Masayı Sil</span>
+                    </button>
+                  </div>
+                </div>
+              ) : currentElement ? (
+                /* 2. ARCHITECTURAL ELEMENT INSPECTOR */
+                <div className="space-y-3.5 text-xs animate-fadeIn">
+                  <div className="space-y-1">
+                    <label className="text-gray-300 font-semibold">Varlık / Kroki Başlığı</label>
+                    <input
+                      type="text"
+                      disabled={isLocked}
+                      value={currentElement.name}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setElements(prev => prev.map(el => el.id === currentElement.id ? { ...el, name: val } : el));
+                      }}
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none font-medium disabled:opacity-60"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-gray-300 font-semibold">Varlık Türü</label>
+                    <select
+                      disabled={isLocked}
+                      value={currentElement.type}
+                      onChange={(e) => {
+                        const val = e.target.value as any;
+                        setElements(prev => prev.map(el => el.id === currentElement.id ? { ...el, type: val } : el));
+                      }}
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white focus:border-gold focus:outline-none disabled:opacity-60"
+                    >
+                      <option value="stage">🎤 Canlı Sahne &amp; Fasıl Platformu</option>
+                      <option value="bar">🍸 Kokteyl &amp; Rakı Barı</option>
+                      <option value="entrance">🚪 Ana Müşteri Giriş Kapısı</option>
+                      <option value="exit">🚪 Acil Çıkış / Yangın Kapısı</option>
+                      <option value="wc">🚻 Bay &amp; Bayan WC</option>
+                      <option value="cashier">💳 Kasa &amp; Banko</option>
+                      <option value="kitchen">🍽️ Mutfak &amp; Servis</option>
+                      <option value="column">🏛️ Taşıyıcı Kolon / Direk</option>
+                      <option value="wine">🍷 Şarap Kavı</option>
+                      <option value="custom">✨ Özel Kroki Alanı</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label className="text-gray-300 text-[11px] font-semibold">Genişlik (%)</label>
+                      <input
+                        type="number"
+                        min={4}
+                        max={80}
+                        disabled={isLocked}
+                        value={currentElement.width || 12}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 6;
+                          setElements(prev => prev.map(el => el.id === currentElement.id ? { ...el, width: val } : el));
+                        }}
+                        className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white font-bold disabled:opacity-60"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-gray-300 text-[11px] font-semibold">Yükseklik (%)</label>
+                      <input
+                        type="number"
+                        min={3}
+                        max={70}
+                        disabled={isLocked}
+                        value={currentElement.height || 10}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 5;
+                          setElements(prev => prev.map(el => el.id === currentElement.id ? { ...el, height: val } : el));
+                        }}
+                        className="w-full bg-meyhane-bg border border-meyhane-border p-2 rounded-xl text-white font-bold disabled:opacity-60"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Coordinate location */}
+                  <div className="p-2.5 rounded-xl bg-meyhane-bg border border-meyhane-border/70 flex items-center justify-between text-[11px] text-gray-400">
+                    <span>Tuval Konumu:</span>
+                    <span className="font-mono text-gold font-semibold">X: %{currentElement.posX} • Y: %{currentElement.posY}</span>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      disabled={isLocked}
+                      onClick={handleDeleteSelected}
+                      className="w-full py-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 text-red-300 border border-red-500/40 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Bu Varlığı Sil</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* 3. DEFAULT INSPECTOR STATE */
+                <div className="py-8 text-center text-meyhane-muted text-xs space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-gold mx-auto flex items-center justify-center">
+                    <Eye className="w-6 h-6 opacity-70" />
+                  </div>
+                  <p>
+                    Düzenlemek için tuval üzerindeki herhangi bir <strong>masaya</strong> veya <strong>mimari öğeye</strong> (Sahne, Bar, WC, Kapı vb.) tıklayın.
+                  </p>
+                  <div className="pt-4 border-t border-meyhane-border/60 text-left space-y-2 text-[11px]">
+                    <div className="flex items-center justify-between text-gray-400">
+                      <span>Toplam Masa Sayısı:</span>
+                      <strong className="text-white">{tables.length}</strong>
+                    </div>
+                    <div className="flex items-center justify-between text-gray-400">
+                      <span>Toplam Kapasite:</span>
+                      <strong className="text-gold">{totalCapacity} Kişi</strong>
+                    </div>
+                    <div className="flex items-center justify-between text-gray-400">
+                      <span>Mimari Kroki Öğeleri:</span>
+                      <strong className="text-emerald-400">{elements.length} Öğe</strong>
+                    </div>
+                    <div className="flex items-center justify-between text-gray-400">
+                      <span>Düzenleme Durumu:</span>
+                      <strong className={isLocked ? 'text-amber-400' : 'text-emerald-400'}>
+                        {isLocked ? '🔒 Kilitli' : '🔓 Düzenlenebilir'}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
 
       </div>
 
