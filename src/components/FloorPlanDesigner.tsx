@@ -97,7 +97,7 @@ export default function FloorPlanDesigner({
   // Left sidebar category tab
   const [activeAssetTab, setActiveAssetTab] = useState<'tables' | 'architectural' | 'custom'>('tables');
 
-  // Zoom state (default: 0.85 = 85%, range: 0.45 to 2.0)
+  // Zoom state (default: 0.85 = 85%, range: 0.40 to 2.0)
   const [zoom, setZoom] = useState(0.85);
 
   // Dragging state for items
@@ -105,7 +105,10 @@ export default function FloorPlanDesigner({
 
   // Pan (Hand tool) state for canvas dragging
   const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+  const panStartRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
+
+  // Viewport box in the radar (Odaklanan Noktayı Ufak Bir Dikdörtgen İçerisinde Gösterme)
+  const [viewportBox, setViewportBox] = useState({ x: 0, y: 0, w: 25, h: 25 });
 
   // Save feedback state
   const [isSaving, setIsSaving] = useState(false);
@@ -250,6 +253,74 @@ export default function FloorPlanDesigner({
     setCustomAssetName('');
   };
 
+  // Update Viewport Box in Radar
+  const updateViewportBox = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const totalW = VIRTUAL_WIDTH * zoom;
+    const totalH = VIRTUAL_HEIGHT * zoom;
+    const clientW = el.clientWidth;
+    const clientH = el.clientHeight;
+
+    const x = Math.min(100, Math.max(0, (el.scrollLeft / totalW) * 100));
+    const y = Math.min(100, Math.max(0, (el.scrollTop / totalH) * 100));
+    const w = Math.min(100, Math.max(8, (clientW / totalW) * 100));
+    const h = Math.min(100, Math.max(8, (clientH / totalH) * 100));
+
+    setViewportBox({ x, y, w, h });
+  };
+
+  // Update Radar Viewfinder on zoom change or mount
+  useEffect(() => {
+    updateViewportBox();
+  }, [zoom]);
+
+  // Mouse Wheel (Scroll) to Zoom In / Zoom Out
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // Prevent browser vertical page scroll while over canvas
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.08 : -0.08;
+      setZoom(prev => Math.min(2.0, Math.max(0.40, Number((prev + delta).toFixed(2)))));
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
+
+  // Hand Pan (Window-level mouse movement for silky-smooth drag navigation)
+  useEffect(() => {
+    const onWindowMouseMove = (e: MouseEvent) => {
+      if (!isPanning || !panStartRef.current || !scrollContainerRef.current) return;
+      const dx = e.clientX - panStartRef.current.startX;
+      const dy = e.clientY - panStartRef.current.startY;
+      scrollContainerRef.current.scrollLeft = panStartRef.current.scrollLeft - dx;
+      scrollContainerRef.current.scrollTop = panStartRef.current.scrollTop - dy;
+      updateViewportBox();
+    };
+
+    const onWindowMouseUp = () => {
+      if (isPanning) {
+        setIsPanning(false);
+        panStartRef.current = null;
+      }
+    };
+
+    if (isPanning) {
+      window.addEventListener('mousemove', onWindowMouseMove);
+      window.addEventListener('mouseup', onWindowMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', onWindowMouseMove);
+      window.removeEventListener('mouseup', onWindowMouseUp);
+    };
+  }, [isPanning]);
+
   // Drag Handlers for items (with Zoom compensation)
   const handleMouseDownItem = (type: 'table' | 'element', id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -258,23 +329,26 @@ export default function FloorPlanDesigner({
     setDragging({ type, id });
   };
 
-  // Pan Handlers for the canvas background (Hand Tool / Drag-to-Scroll)
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.target !== canvasInnerRef.current && (e.target as HTMLElement).tagName !== 'DIV') {
+  // Pan Handlers for the empty canvas background (Hand Tool / Drag-to-Scroll)
+  const handleViewportMouseDown = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    // Don't pan if clicking an interactive table or element
+    if (target.closest('[data-drag-item="true"]')) {
       return;
     }
-    if (!scrollContainerRef.current) return;
     setIsPanning(true);
-    setPanStart({
-      x: e.clientX,
-      y: e.clientY,
-      scrollLeft: scrollContainerRef.current.scrollLeft,
-      scrollTop: scrollContainerRef.current.scrollTop,
-    });
+    if (scrollContainerRef.current) {
+      panStartRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        scrollLeft: scrollContainerRef.current.scrollLeft,
+        scrollTop: scrollContainerRef.current.scrollTop,
+      };
+    }
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    // 1. If dragging a table or architectural element:
+    // If dragging a table or architectural element:
     if (dragging && !isLocked && canvasInnerRef.current) {
       const rect = canvasInnerRef.current.getBoundingClientRect();
       const unscaledX = (e.clientX - rect.left) / zoom;
@@ -288,22 +362,11 @@ export default function FloorPlanDesigner({
       } else {
         setElements(prev => prev.map(el => el.id === dragging.id ? { ...el, posX, posY } : el));
       }
-      return;
-    }
-
-    // 2. If panning canvas background:
-    if (isPanning && panStart && scrollContainerRef.current) {
-      const dx = e.clientX - panStart.x;
-      const dy = e.clientY - panStart.y;
-      scrollContainerRef.current.scrollLeft = panStart.scrollLeft - dx;
-      scrollContainerRef.current.scrollTop = panStart.scrollTop - dy;
     }
   };
 
   const handleCanvasMouseUp = () => {
     setDragging(null);
-    setIsPanning(false);
-    setPanStart(null);
   };
 
   // Delete Handlers
@@ -331,7 +394,7 @@ export default function FloorPlanDesigner({
 
   // Zoom Functions
   const handleZoomIn = () => setZoom(prev => Math.min(2.0, Number((prev + 0.15).toFixed(2))));
-  const handleZoomOut = () => setZoom(prev => Math.max(0.45, Number((prev - 0.15).toFixed(2))));
+  const handleZoomOut = () => setZoom(prev => Math.max(0.40, Number((prev - 0.15).toFixed(2))));
   const handleResetZoom = () => setZoom(1.0);
   const handleFitScreen = () => setZoom(0.60);
 
@@ -345,6 +408,15 @@ export default function FloorPlanDesigner({
       top: Math.max(0, targetY),
       behavior: 'smooth',
     });
+    setTimeout(updateViewportBox, 150);
+  };
+
+  // Radar click to focus (Tıkla Odaklan)
+  const handleRadarClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickXPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+    const clickYPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+    scrollToZone(clickXPct, clickYPct);
   };
 
   // Save changes
@@ -389,7 +461,7 @@ export default function FloorPlanDesigner({
   // If zoom is less than 0.85, counter-scale the labels so that text NEVER drops below 11-12px!
   const textScale = zoom < 0.85 ? Math.min(2.1, Number((0.85 / zoom).toFixed(2))) : 1.0;
 
-  // Dynamic min table card dimensions to ensure clickability and visual presence even at 45% zoom:
+  // Dynamic min table card dimensions to ensure clickability and visual presence even at 40% zoom:
   const tableMinW = Math.max(76, Math.round(76 * (zoom < 0.85 ? 0.85 / zoom : 1)));
   const tableMinH = Math.max(54, Math.round(54 * (zoom < 0.85 ? 0.85 / zoom : 1)));
 
@@ -418,7 +490,7 @@ export default function FloorPlanDesigner({
             </span>
           </div>
           <p className="text-xs text-gray-400">
-            Masaları, sahneyi, barı ve kapıları yerleştirin. Yan panelleri gizleyerek tuvali tüm ekrana yayabilirsiniz.
+            Boş tuvali fareyle tutup sürükleyerek gezinebilir, mouse scroll ile zoom yapabilir ve yan panelleri kapatarak tuvali tam ekrana yayabilirsiniz.
           </p>
         </div>
 
@@ -921,194 +993,198 @@ export default function FloorPlanDesigner({
             </div>
           )}
 
-          {/* Canvas Scroll Viewport Container (Taller, highly spacious viewport) */}
-          <div
-            ref={scrollContainerRef}
-            className={`relative rounded-3xl bg-[#07090D] border-2 border-meyhane-border/90 shadow-2xl overflow-auto select-none scrollbar-thin scrollbar-thumb-gold/30 scrollbar-track-transparent ${
-              isWideMode ? 'h-[78vh]' : 'h-[720px]'
-            }`}
-          >
-            {/* Scaled Wrapper to maintain native scroll dimensions */}
+          {/* VIEWPORT FRAME (Relative, holds scroll container AND fixed radar/tooltips) */}
+          <div className="relative rounded-3xl overflow-hidden border-2 border-meyhane-border/90 shadow-2xl">
+            
+            {/* Scroll Container (Captures mouse wheel zoom & hand pan navigation) */}
             <div
-              style={{
-                width: `${VIRTUAL_WIDTH * zoom}px`,
-                height: `${VIRTUAL_HEIGHT * zoom}px`,
-              }}
-              className="relative"
+              ref={scrollContainerRef}
+              onScroll={updateViewportBox}
+              onMouseDown={handleViewportMouseDown}
+              className={`relative bg-[#07090D] overflow-auto select-none scrollbar-thin scrollbar-thumb-gold/30 scrollbar-track-transparent ${
+                isWideMode ? 'h-[78vh]' : 'h-[720px]'
+              } ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
             >
-              {/* Virtual Infinite Canvas (2400px x 1500px transformed by zoom) */}
+              {/* Scaled Wrapper to maintain native scroll dimensions */}
               <div
-                ref={canvasInnerRef}
-                onMouseDown={handleCanvasMouseDown}
-                onMouseMove={handleCanvasMouseMove}
-                onMouseUp={handleCanvasMouseUp}
-                onMouseLeave={handleCanvasMouseUp}
                 style={{
-                  width: `${VIRTUAL_WIDTH}px`,
-                  height: `${VIRTUAL_HEIGHT}px`,
-                  transform: `scale(${zoom})`,
-                  transformOrigin: 'top left',
+                  width: `${VIRTUAL_WIDTH * zoom}px`,
+                  height: `${VIRTUAL_HEIGHT * zoom}px`,
                 }}
-                className={`relative bg-[#090C10] ${
-                  isPanning ? 'cursor-grabbing' : isLocked ? 'cursor-default' : 'cursor-grab'
-                }`}
+                className="relative"
               >
-                {/* Architectural Blueprint Grid Background */}
-                <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f293718_1px,transparent_1px),linear-gradient(to_bottom,#1f293718_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none" />
-                <div className="absolute inset-0 bg-[linear-gradient(to_right,#d4af3708_1px,transparent_1px),linear-gradient(to_bottom,#d4af3708_1px,transparent_1px)] bg-[size:150px_150px] pointer-events-none" />
+                {/* Virtual Infinite Canvas (2400px x 1500px transformed by zoom) */}
+                <div
+                  ref={canvasInnerRef}
+                  onMouseMove={handleCanvasMouseMove}
+                  onMouseUp={handleCanvasMouseUp}
+                  style={{
+                    width: `${VIRTUAL_WIDTH}px`,
+                    height: `${VIRTUAL_HEIGHT}px`,
+                    transform: `scale(${zoom})`,
+                    transformOrigin: 'top left',
+                  }}
+                  className="relative bg-[#090C10]"
+                >
+                  {/* Architectural Blueprint Grid Background */}
+                  <div className="absolute inset-0 bg-[linear-gradient(to_right,#1f293718_1px,transparent_1px),linear-gradient(to_bottom,#1f293718_1px,transparent_1px)] bg-[size:30px_30px] pointer-events-none" />
+                  <div className="absolute inset-0 bg-[linear-gradient(to_right,#d4af3708_1px,transparent_1px),linear-gradient(to_bottom,#d4af3708_1px,transparent_1px)] bg-[size:150px_150px] pointer-events-none" />
 
-                {/* DYNAMIC ARCHITECTURAL & KROKI ELEMENTS (Sahne, Bar, WC, Kapılar, Kasa, Mutfak, Kolon vb.) */}
-                {elements.map((el) => {
-                  const isSelected = selectedItem?.type === 'element' && selectedItem.id === el.id;
-                  const w = el.width || 12;
-                  const h = el.height || 10;
+                  {/* DYNAMIC ARCHITECTURAL & KROKI ELEMENTS (Sahne, Bar, WC, Kapılar, Kasa, Mutfak, Kolon vb.) */}
+                  {elements.map((el) => {
+                    const isSelected = selectedItem?.type === 'element' && selectedItem.id === el.id;
+                    const w = el.width || 12;
+                    const h = el.height || 10;
 
-                  // Render styles based on element type
-                  const getElementStyle = () => {
-                    switch (el.type) {
-                      case 'stage':
-                        return 'border-2 border-gold/70 bg-gradient-to-r from-gold/15 via-gold/30 to-gold/15 text-gold shadow-[0_0_35px_rgba(212,175,55,0.25)]';
-                      case 'bar':
-                        return 'border-2 border-emerald-500/70 bg-emerald-950/40 text-emerald-200 shadow-lg';
-                      case 'entrance':
-                        return 'border-2 border-emerald-400 bg-emerald-950/60 text-emerald-300 shadow-emerald-500/20';
-                      case 'exit':
-                        return 'border-2 border-red-500 bg-red-950/60 text-red-300 shadow-red-500/20';
-                      case 'wc':
-                        return 'border-2 border-indigo-500/70 bg-indigo-950/50 text-indigo-200 shadow-indigo-500/20';
-                      case 'cashier':
-                        return 'border-2 border-amber-500/70 bg-amber-950/50 text-amber-200 shadow-amber-500/20';
-                      case 'kitchen':
-                        return 'border-2 border-orange-500/70 bg-orange-950/50 text-orange-200 shadow-orange-500/20';
-                      case 'column':
-                        return 'border-2 border-gray-500 bg-gray-800/80 text-gray-300';
-                      case 'wine':
-                        return 'border-2 border-purple-500/70 bg-purple-950/50 text-purple-200 shadow-purple-500/20';
-                      default:
-                        return 'border-2 border-gold/50 bg-meyhane-surface/90 text-white';
-                    }
-                  };
+                    // Render styles based on element type
+                    const getElementStyle = () => {
+                      switch (el.type) {
+                        case 'stage':
+                          return 'border-2 border-gold/70 bg-gradient-to-r from-gold/15 via-gold/30 to-gold/15 text-gold shadow-[0_0_35px_rgba(212,175,55,0.25)]';
+                        case 'bar':
+                          return 'border-2 border-emerald-500/70 bg-emerald-950/40 text-emerald-200 shadow-lg';
+                        case 'entrance':
+                          return 'border-2 border-emerald-400 bg-emerald-950/60 text-emerald-300 shadow-emerald-500/20';
+                        case 'exit':
+                          return 'border-2 border-red-500 bg-red-950/60 text-red-300 shadow-red-500/20';
+                        case 'wc':
+                          return 'border-2 border-indigo-500/70 bg-indigo-950/50 text-indigo-200 shadow-indigo-500/20';
+                        case 'cashier':
+                          return 'border-2 border-amber-500/70 bg-amber-950/50 text-amber-200 shadow-amber-500/20';
+                        case 'kitchen':
+                          return 'border-2 border-orange-500/70 bg-orange-950/50 text-orange-200 shadow-orange-500/20';
+                        case 'column':
+                          return 'border-2 border-gray-500 bg-gray-800/80 text-gray-300';
+                        case 'wine':
+                          return 'border-2 border-purple-500/70 bg-purple-950/50 text-purple-200 shadow-purple-500/20';
+                        default:
+                          return 'border-2 border-gold/50 bg-meyhane-surface/90 text-white';
+                      }
+                    };
 
-                  const getElementIcon = () => {
-                    switch (el.type) {
-                      case 'stage': return <Music className="w-5 h-5 text-gold animate-pulse" />;
-                      case 'bar': return <Wine className="w-5 h-5 text-emerald-400" />;
-                      case 'entrance': return <DoorOpen className="w-5 h-5 text-emerald-400" />;
-                      case 'exit': return <DoorClosed className="w-5 h-5 text-red-400" />;
-                      case 'wc': return <Users className="w-5 h-5 text-indigo-400" />;
-                      case 'cashier': return <CreditCard className="w-5 h-5 text-amber-400" />;
-                      case 'kitchen': return <Utensils className="w-5 h-5 text-orange-400" />;
-                      case 'column': return <Building2 className="w-4 h-4 text-gray-400" />;
-                      case 'wine': return <Wine className="w-5 h-5 text-purple-400" />;
-                      default: return <Sparkles className="w-4 h-4 text-gold" />;
-                    }
-                  };
+                    const getElementIcon = () => {
+                      switch (el.type) {
+                        case 'stage': return <Music className="w-5 h-5 text-gold animate-pulse" />;
+                        case 'bar': return <Wine className="w-5 h-5 text-emerald-400" />;
+                        case 'entrance': return <DoorOpen className="w-5 h-5 text-emerald-400" />;
+                        case 'exit': return <DoorClosed className="w-5 h-5 text-red-400" />;
+                        case 'wc': return <Users className="w-5 h-5 text-indigo-400" />;
+                        case 'cashier': return <CreditCard className="w-5 h-5 text-amber-400" />;
+                        case 'kitchen': return <Utensils className="w-5 h-5 text-orange-400" />;
+                        case 'column': return <Building2 className="w-4 h-4 text-gray-400" />;
+                        case 'wine': return <Wine className="w-5 h-5 text-purple-400" />;
+                        default: return <Sparkles className="w-4 h-4 text-gold" />;
+                      }
+                    };
 
-                  return (
-                    <div
-                      key={el.id}
-                      onMouseDown={(e) => handleMouseDownItem('element', el.id, e)}
-                      style={{
-                        left: `${el.posX}%`,
-                        top: `${el.posY}%`,
-                        width: `${w}%`,
-                        height: `${h}%`,
-                        transform: 'translate(-50%, -50%)',
-                      }}
-                      className={`absolute rounded-2xl p-3 flex flex-col items-center justify-center text-center transition-all ${
-                        isLocked ? 'cursor-pointer' : 'cursor-move'
-                      } ${getElementStyle()} ${
-                        isSelected
-                          ? 'ring-4 ring-gold scale-105 z-30 shadow-2xl brightness-125'
-                          : 'z-10 hover:brightness-110'
-                      }`}
-                    >
-                      <div 
-                        style={{ transform: `scale(${textScale})`, transformOrigin: 'center' }}
-                        className="flex items-center gap-2 mb-1"
+                    return (
+                      <div
+                        key={el.id}
+                        data-drag-item="true"
+                        onMouseDown={(e) => handleMouseDownItem('element', el.id, e)}
+                        style={{
+                          left: `${el.posX}%`,
+                          top: `${el.posY}%`,
+                          width: `${w}%`,
+                          height: `${h}%`,
+                          transform: 'translate(-50%, -50%)',
+                        }}
+                        className={`absolute rounded-2xl p-3 flex flex-col items-center justify-center text-center transition-all ${
+                          isLocked ? 'cursor-pointer' : 'cursor-move'
+                        } ${getElementStyle()} ${
+                          isSelected
+                            ? 'ring-4 ring-gold scale-105 z-30 shadow-2xl brightness-125'
+                            : 'z-10 hover:brightness-110'
+                        }`}
                       >
-                        {getElementIcon()}
-                        <span className="text-xs font-bold font-serif uppercase tracking-wider truncate max-w-[90%]">
-                          {el.name}
+                        <div 
+                          style={{ transform: `scale(${textScale})`, transformOrigin: 'center' }}
+                          className="flex items-center gap-2 mb-1"
+                        >
+                          {getElementIcon()}
+                          <span className="text-xs font-bold font-serif uppercase tracking-wider truncate max-w-[90%]">
+                            {el.name}
+                          </span>
+                        </div>
+                        <span 
+                          style={{ transform: `scale(${Math.min(1.4, textScale)})`, transformOrigin: 'center' }}
+                          className="text-[10px] opacity-75 uppercase font-mono tracking-widest"
+                        >
+                          {el.type === 'stage' ? '♫ Canlı Fasıl & Gala ♫' :
+                           el.type === 'entrance' ? '➔ Ana Müşteri Girişi' :
+                           el.type === 'exit' ? '➔ Acil Yangın Çıkışı' :
+                           el.type === 'wc' ? 'Restroom' :
+                           el.type === 'column' ? 'Taşıyıcı Engel' : 'Kroki Alanı'}
                         </span>
                       </div>
-                      <span 
-                        style={{ transform: `scale(${Math.min(1.4, textScale)})`, transformOrigin: 'center' }}
-                        className="text-[10px] opacity-75 uppercase font-mono tracking-widest"
-                      >
-                        {el.type === 'stage' ? '♫ Canlı Fasıl & Gala ♫' :
-                         el.type === 'entrance' ? '➔ Ana Müşteri Girişi' :
-                         el.type === 'exit' ? '➔ Acil Yangın Çıkışı' :
-                         el.type === 'wc' ? 'Restroom' :
-                         el.type === 'column' ? 'Taşıyıcı Engel' : 'Kroki Alanı'}
-                      </span>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
 
-                {/* DRAGGABLE TABLES WITH DYNAMIC ANTI-SHRINK ADAPTIVE FONT SCALING (UP TO 200 TABLES) */}
-                {tables.map((table) => {
-                  const isSelected = selectedItem?.type === 'table' && selectedItem.id === table.id;
-                  const isVIP = table.sectionId === 'vip_sahne';
-                  const isLoca = table.sectionId === 'loca';
-                  const isBahce = table.sectionId === 'bahce';
+                  {/* DRAGGABLE TABLES WITH DYNAMIC ANTI-SHRINK ADAPTIVE FONT SCALING (UP TO 200 TABLES) */}
+                  {tables.map((table) => {
+                    const isSelected = selectedItem?.type === 'table' && selectedItem.id === table.id;
+                    const isVIP = table.sectionId === 'vip_sahne';
+                    const isLoca = table.sectionId === 'loca';
+                    const isBahce = table.sectionId === 'bahce';
 
-                  return (
-                    <div
-                      key={table.id}
-                      onMouseDown={(e) => handleMouseDownItem('table', table.id, e)}
-                      onMouseEnter={() => setHoveredTable(table)}
-                      onMouseLeave={() => setHoveredTable(null)}
-                      style={{
-                        left: `${table.posX}%`,
-                        top: `${table.posY}%`,
-                        transform: 'translate(-50%, -50%)',
-                        minWidth: `${tableMinW}px`,
-                        minHeight: `${tableMinH}px`,
-                      }}
-                      className={`absolute p-2.5 rounded-2xl border-2 transition-all flex flex-col items-center justify-center text-center shadow-lg select-none ${
-                        isLocked ? 'cursor-pointer' : 'cursor-move'
-                      } ${
-                        isSelected
-                          ? 'ring-4 ring-gold border-gold bg-gold text-black scale-110 z-30 shadow-2xl font-bold'
-                          : isVIP
-                          ? 'border-amber-400/80 bg-amber-950/85 text-amber-200 z-20 hover:scale-105'
-                          : isLoca
-                          ? 'border-purple-400/80 bg-purple-950/85 text-purple-200 z-20 hover:scale-105'
-                          : isBahce
-                          ? 'border-teal-400/80 bg-teal-950/85 text-teal-200 z-20 hover:scale-105'
-                          : 'border-emerald-500/70 bg-[#0E131C] text-white z-20 hover:scale-105 hover:border-gold'
-                      }`}
-                    >
-                      {/* ANTI-SHRINK TABLE NUMBER (Counter-scaled so it remains 100% readable even at 45% zoom!) */}
-                      <div 
-                        style={{ 
-                          transform: `scale(${textScale})`, 
-                          transformOrigin: 'center',
+                    return (
+                      <div
+                        key={table.id}
+                        data-drag-item="true"
+                        onMouseDown={(e) => handleMouseDownItem('table', table.id, e)}
+                        onMouseEnter={() => setHoveredTable(table)}
+                        onMouseLeave={() => setHoveredTable(null)}
+                        style={{
+                          left: `${table.posX}%`,
+                          top: `${table.posY}%`,
+                          transform: 'translate(-50%, -50%)',
+                          minWidth: `${tableMinW}px`,
+                          minHeight: `${tableMinH}px`,
                         }}
-                        className="text-xs font-bold font-serif whitespace-nowrap px-1"
+                        className={`absolute p-2.5 rounded-2xl border-2 transition-all flex flex-col items-center justify-center text-center shadow-lg select-none ${
+                          isLocked ? 'cursor-pointer' : 'cursor-move'
+                        } ${
+                          isSelected
+                            ? 'ring-4 ring-gold border-gold bg-gold text-black scale-110 z-30 shadow-2xl font-bold'
+                            : isVIP
+                            ? 'border-amber-400/80 bg-amber-950/85 text-amber-200 z-20 hover:scale-105'
+                            : isLoca
+                            ? 'border-purple-400/80 bg-purple-950/85 text-purple-200 z-20 hover:scale-105'
+                            : isBahce
+                            ? 'border-teal-400/80 bg-teal-950/85 text-teal-200 z-20 hover:scale-105'
+                            : 'border-emerald-500/70 bg-[#0E131C] text-white z-20 hover:scale-105 hover:border-gold'
+                        }`}
                       >
-                        {table.number}
-                      </div>
+                        {/* ANTI-SHRINK TABLE NUMBER (Counter-scaled so it remains 100% readable even at 40% zoom!) */}
+                        <div 
+                          style={{ 
+                            transform: `scale(${textScale})`, 
+                            transformOrigin: 'center',
+                          }}
+                          className="text-xs font-bold font-serif whitespace-nowrap px-1"
+                        >
+                          {table.number}
+                        </div>
 
-                      {/* Capacity badge */}
-                      <div 
-                        style={{ 
-                          transform: `scale(${Math.min(1.4, textScale)})`, 
-                          transformOrigin: 'center',
-                        }}
-                        className="text-[10px] opacity-80 whitespace-nowrap mt-0.5"
-                      >
-                        {table.capacity} Kişi
+                        {/* Capacity badge */}
+                        <div 
+                          style={{ 
+                            transform: `scale(${Math.min(1.4, textScale)})`, 
+                            transformOrigin: 'center',
+                          }}
+                          className="text-[10px] opacity-80 whitespace-nowrap mt-0.5"
+                        >
+                          {table.capacity} Kişi
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
 
+                </div>
               </div>
             </div>
 
-            {/* FLOATING HOVER MAGNIFIER BADGE (Guarantees crystal-clear reading of any table hovered at any zoom level!) */}
+            {/* FLOATING HOVER MAGNIFIER BADGE (Sticky top-left of the viewport frame) */}
             {hoveredTable && (
               <div className="absolute top-4 left-4 z-40 p-3 rounded-2xl bg-black/90 border border-gold/70 shadow-2xl backdrop-blur-md text-xs animate-fadeIn flex items-center gap-3 pointer-events-none">
                 <div className="w-8 h-8 rounded-xl bg-gold text-black font-bold flex items-center justify-center font-serif text-sm">
@@ -1128,40 +1204,82 @@ export default function FloorPlanDesigner({
               </div>
             )}
 
-            {/* FLOATING MINIMAP RADAR (Bottom right indicator) */}
-            <div className="absolute bottom-4 right-4 z-30 p-2 rounded-2xl bg-black/85 border border-white/15 backdrop-blur-md shadow-2xl hidden md:block">
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 font-bold mb-1 flex items-center justify-between">
-                <span>Salon Radarı</span>
-                <span className="text-gold font-mono">%{Math.round(zoom * 100)}</span>
+            {/* FLOATING FIXED MINIMAP RADAR (Permanently fixed in the bottom-right of the viewport frame!) */}
+            <div className="absolute bottom-4 right-4 z-40 p-3 rounded-2xl bg-black/95 border-2 border-gold/50 backdrop-blur-md shadow-2xl hidden md:block">
+              <div className="text-[10px] uppercase tracking-wider text-gray-300 font-bold mb-1.5 flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-gold">
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>Salon Radarı</span>
+                </div>
+                <span className="text-gold font-mono font-bold bg-gold/15 px-1.5 py-0.5 rounded text-[9px]">
+                  %{Math.round(zoom * 100)}
+                </span>
               </div>
-              <div 
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const xPct = Math.round(((e.clientX - rect.left) / rect.width) * 100);
-                  const yPct = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-                  scrollToZone(xPct, yPct);
-                }}
-                className="w-32 h-20 rounded-xl bg-meyhane-bg border border-meyhane-border relative cursor-pointer overflow-hidden group"
-                title="Radara tıklayarak salonda istediğiniz bölgeye anında zıplayın"
-              >
-                {/* Mini elements */}
-                <div className="absolute top-1 left-1/4 w-1/2 h-2 bg-gold/50 rounded-sm" />
-                <div className="absolute top-1/4 left-1 w-2 h-8 bg-emerald-500/50 rounded-sm" />
-                <div className="absolute top-1/4 right-1 w-2 h-8 bg-purple-500/50 rounded-sm" />
-                <div className="absolute bottom-1 left-1/3 w-1/3 h-2 bg-emerald-400/50 rounded-sm" />
 
-                {/* Mini tables cluster dots */}
-                {tables.slice(0, 30).map((t, i) => (
+              {/* Radar Interactive Map Box (Enlarged to 224px x 144px with Viewfinder) */}
+              <div 
+                onClick={handleRadarClick}
+                className="w-56 h-36 rounded-xl bg-[#07090E] border border-meyhane-border relative cursor-pointer overflow-hidden shadow-inner group"
+                title="Radara tıklayarak salonda istediğiniz bölgeye anında odaklanın"
+              >
+                {/* Grid lines in radar */}
+                <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:14px_14px] pointer-events-none" />
+
+                {/* Mini Landmarks */}
+                {/* Stage */}
+                <div className="absolute top-1 left-1/4 w-1/2 h-2.5 bg-gold/40 border border-gold/70 rounded flex items-center justify-center text-[7px] text-gold font-bold">
+                  SAHNE
+                </div>
+                {/* Bar */}
+                <div className="absolute top-1/4 left-1 w-2.5 h-12 bg-emerald-500/40 border border-emerald-500/60 rounded" />
+                {/* Wine Kav */}
+                <div className="absolute top-1/4 right-1 w-2.5 h-12 bg-purple-500/40 border border-purple-500/60 rounded" />
+                {/* Entrance */}
+                <div className="absolute bottom-1 left-1/3 w-1/3 h-2 bg-emerald-400/40 border border-emerald-400/70 rounded flex items-center justify-center text-[6px] text-emerald-300 font-bold">
+                  GİRİŞ
+                </div>
+                {/* Restrooms */}
+                <div className="absolute top-1 right-2 w-4 h-3 bg-indigo-500/40 border border-indigo-500/60 rounded flex items-center justify-center text-[6px] text-indigo-200 font-bold">
+                  WC
+                </div>
+
+                {/* Mini dots for all venue tables */}
+                {tables.map((t) => (
                   <div
-                    key={i}
+                    key={t.id}
                     style={{ left: `${t.posX}%`, top: `${t.posY}%` }}
-                    className="absolute w-1 h-1 rounded-full bg-gold/70"
+                    className={`absolute w-1.5 h-1.5 rounded-full -translate-x-1/2 -translate-y-1/2 ${
+                      t.sectionId === 'vip_sahne' ? 'bg-amber-400' :
+                      t.sectionId === 'loca' ? 'bg-purple-400' :
+                      t.sectionId === 'bahce' ? 'bg-teal-400' : 'bg-emerald-400'
+                    }`}
                   />
                 ))}
 
-                <div className="absolute inset-0 bg-gold/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[9px] text-gold font-semibold">
+                {/* VIEWFINDER RECTANGLE (Odaklanan Noktayı Ufak Bir Kare/Dikdörtgen İçinde Gösterir) */}
+                <div
+                  style={{
+                    left: `${viewportBox.x}%`,
+                    top: `${viewportBox.y}%`,
+                    width: `${viewportBox.w}%`,
+                    height: `${viewportBox.h}%`,
+                  }}
+                  className="absolute border-2 border-gold bg-gold/20 rounded shadow-[0_0_12px_rgba(212,175,55,0.7)] pointer-events-none transition-all duration-75 flex items-center justify-center"
+                >
+                  <span className="text-[7px] font-black uppercase text-gold tracking-tight bg-black/85 px-1 py-0.5 rounded shadow">
+                    Odak
+                  </span>
+                </div>
+
+                {/* Hover prompt */}
+                <div className="absolute inset-0 bg-gold/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-[10px] text-gold font-bold pointer-events-none">
                   Tıkla &amp; Odaklan
                 </div>
+              </div>
+
+              <div className="mt-1.5 flex items-center justify-between text-[9px] text-gray-400">
+                <span>Tıklayarak odaklanın</span>
+                <span className="text-gray-500">2400 × 1500</span>
               </div>
             </div>
 
