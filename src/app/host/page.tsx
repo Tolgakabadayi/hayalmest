@@ -28,12 +28,18 @@ import {
 } from 'lucide-react';
 import { Reservation } from '@/lib/storage';
 import { ALL_TABLES, VENUE_SECTIONS, TableItem } from '@/data/tablesData';
-import { formatTableDisplay } from '@/lib/formatters';
+import { formatTableDisplay, setRegisteredTables } from '@/lib/formatters';
+import InteractiveFloorPlan from '@/components/InteractiveFloorPlan';
+import { VenueElement } from '@/lib/tablesStorage';
 
 export default function HostPanelPage() {
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [tablesList, setTablesList] = useState<TableItem[]>(ALL_TABLES);
+  const [venueElements, setVenueElements] = useState<VenueElement[]>([]);
+  const [hostViewMode, setHostViewMode] = useState<'list' | 'kroki'>('list');
+  const [spotlightTableId, setSpotlightTableId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState<'today' | 'tomorrow' | 'all' | 'custom'>('today');
@@ -62,10 +68,19 @@ export default function HostPanelPage() {
   const fetchReservations = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/reservations');
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        setReservations(json.data);
+      const [resData, tablesData] = await Promise.all([
+        fetch('/api/reservations').then(r => r.json()).catch(() => ({})),
+        fetch('/api/tables').then(r => r.json()).catch(() => ({})),
+      ]);
+      if (resData?.success && Array.isArray(resData.data)) {
+        setReservations(resData.data);
+      }
+      if (tablesData?.success) {
+        if (tablesData.tables?.length) {
+          setTablesList(tablesData.tables);
+          setRegisteredTables(tablesData.tables);
+        }
+        if (tablesData.elements?.length) setVenueElements(tablesData.elements);
       }
     } catch (err) {
       console.error('Fetch error:', err);
@@ -74,12 +89,16 @@ export default function HostPanelPage() {
     }
   };
 
+  const [hostName, setHostName] = useState<string>('');
+
   useEffect(() => {
-    const token = localStorage.getItem('hayalmest_admin_token');
-    if (!token) {
-      router.push('/admin/login?redirect=/host');
+    const hostToken = localStorage.getItem('hayalmest_host_token') || localStorage.getItem('hayalmest_admin_token');
+    if (!hostToken) {
+      router.push('/host/login');
       return;
     }
+    const storedName = localStorage.getItem('hayalmest_host_name');
+    if (storedName) setHostName(storedName);
     setIsAuthenticated(true);
     fetchReservations();
   }, [router]);
@@ -106,7 +125,7 @@ export default function HostPanelPage() {
   const handleConfirmTableChange = async () => {
     if (!changingReservation || !newTableSelection) return;
     try {
-      const tableObj = ALL_TABLES.find(t => t.id === newTableSelection);
+      const tableObj = tablesList.find(t => t.id === newTableSelection) || ALL_TABLES.find(t => t.id === newTableSelection);
       const res = await fetch(`/api/reservations/${changingReservation.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -195,7 +214,7 @@ export default function HostPanelPage() {
                   HayalMest Host &amp; Karşılama Masası
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-bold">
-                  GÜVENLİ OTURUM
+                  {hostName ? `Host: ${hostName}` : 'GÜVENLİ OTURUM'}
                 </span>
               </div>
               <p className="text-[11px] text-meyhane-muted">
@@ -205,6 +224,34 @@ export default function HostPanelPage() {
           </div>
 
           <div className="flex items-center gap-2.5">
+            {/* Host View Switcher: List vs 2D Kroki */}
+            <div className="flex items-center bg-black/60 p-1 rounded-xl border border-gold/40 text-xs shadow-md">
+              <button
+                type="button"
+                onClick={() => { setSpotlightTableId(null); setHostViewMode('list'); }}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 ${
+                  hostViewMode === 'list'
+                    ? 'bg-gold text-black shadow-md font-bold'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Misafir Listesi</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setHostViewMode('kroki')}
+                className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 ${
+                  hostViewMode === 'kroki'
+                    ? 'bg-gold text-black shadow-md font-bold'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>2D Canlı Kroki</span>
+              </button>
+            </div>
+
             <button
               onClick={fetchReservations}
               className="p-2.5 rounded-xl bg-meyhane-surface border border-meyhane-border text-gray-300 hover:text-gold transition-colors"
@@ -222,8 +269,10 @@ export default function HostPanelPage() {
             <button
               type="button"
               onClick={() => {
+                localStorage.removeItem('hayalmest_host_token');
+                localStorage.removeItem('hayalmest_host_name');
                 localStorage.removeItem('hayalmest_admin_token');
-                router.push('/admin/login?redirect=/host');
+                router.push('/host/login');
               }}
               className="px-3 py-2 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-xs font-semibold text-red-200 transition-colors flex items-center gap-1.5"
               title="Oturumu Kapat"
@@ -236,7 +285,62 @@ export default function HostPanelPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {hostViewMode === 'kroki' ? (
+        <div className="max-w-[1850px] mx-auto px-3 sm:px-6 lg:px-8 py-6 space-y-4 animate-fadeIn">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-meyhane-surface border border-gold/40 shadow-lg">
+            <div>
+              <div className="flex items-center gap-2">
+                <Layers className="w-5 h-5 text-gold" />
+                <h2 className="text-base sm:text-lg font-bold font-serif text-white">
+                  Canlı Salon Krokisi &amp; Masa Durumu
+                </h2>
+                <span className="px-2.5 py-0.5 rounded-full bg-gold/15 text-gold text-xs font-semibold border border-gold/30">
+                  {activeDate || todayStr}
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Kroki üzerinden masaları canlı inceleyin; gelen misafiri tek tıkla masaya oturtun veya masanın kime ait olduğunu görün.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => { setSpotlightTableId(null); setHostViewMode('list'); }}
+              className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold transition-colors flex items-center gap-1.5 border border-white/10"
+            >
+              <span>← Misafir Listesine Dön</span>
+            </button>
+          </div>
+
+          <InteractiveFloorPlan
+            tables={tablesList}
+            elements={venueElements}
+            reservations={reservations}
+            selectedDate={activeDate || todayStr}
+            mode="host"
+            highlightedTableId={spotlightTableId}
+            onSelectTable={(table) => {
+              const res = reservations.find(r => 
+                r.date === (activeDate || todayStr) && 
+                r.status !== 'cancelled' && 
+                (r.tableId === table.id || r.tableId?.includes(table.id))
+              );
+              if (res) {
+                setHighlightedTable({
+                  tableId: res.tableId,
+                  tableName: formatTableDisplay(res.tableId, res.sectionId, tablesList),
+                  sectionId: res.sectionId,
+                  guestName: res.fullName,
+                  guestCount: res.guestCount,
+                  pnr: res.pnr,
+                });
+              }
+            }}
+            onStatusChange={handleMarkSeated}
+          />
+        </div>
+      ) : (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
         {/* 1. FAST SEARCH BAR (HERO) */}
         <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-[#171D27] via-[#121620] to-[#0E1218] border border-gold/40 shadow-2xl space-y-4">
@@ -425,7 +529,7 @@ export default function HostPanelPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filtered.map((res) => {
                 const isSeated = res.status === 'seated';
-                const formattedTable = formatTableDisplay(res.tableId, res.sectionId);
+                const formattedTable = formatTableDisplay(res.tableId, res.sectionId, tablesList);
                 const section = VENUE_SECTIONS.find(s => s.id === res.sectionId);
 
                 return (
@@ -490,17 +594,11 @@ export default function HostPanelPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setHighlightedTable({
-                            tableId: res.tableId,
-                            tableName: formattedTable,
-                            sectionId: res.sectionId,
-                            guestName: res.fullName,
-                            guestCount: res.guestCount,
-                            pnr: res.pnr,
-                          });
+                          setSpotlightTableId(res.tableId);
+                          setHostViewMode('kroki');
                         }}
                         className="px-3.5 py-2 rounded-xl bg-gold/15 hover:bg-gold hover:text-black border border-gold/40 text-gold text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md self-start sm:self-center"
-                        title="Salonda bu masanın yerini krokide göster"
+                        title="Salonda bu masanın yerini 2D canlı krokide göster"
                       >
                         <Layers className="w-3.5 h-3.5" />
                         <span>Krokide Yeri Göster</span>
@@ -588,6 +686,7 @@ export default function HostPanelPage() {
         </div>
 
       </div>
+      )}
 
       {/* 4. VISUAL FLOOR POSITION POPUP MODAL */}
       {highlightedTable && (
@@ -706,7 +805,7 @@ export default function HostPanelPage() {
                 onChange={(e) => setNewTableSelection(e.target.value)}
                 className="w-full bg-meyhane-surface border border-meyhane-border p-2.5 rounded-xl text-xs text-white focus:border-gold focus:outline-none cursor-pointer"
               >
-                {ALL_TABLES.map((t) => (
+                {tablesList.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.number} ({t.capacity} Kişilik - {t.sectionId})
                   </option>

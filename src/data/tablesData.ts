@@ -20,6 +20,8 @@ export interface TableItem {
   mergedCapacity?: number;
   posX: number; // 0-100 percentage inside floor plan
   posY: number; // 0-100 percentage inside floor plan
+  width?: number; // 0-100 percentage inside floor plan
+  height?: number; // 0-100 percentage inside floor plan
   isAvailable?: boolean;
 }
 

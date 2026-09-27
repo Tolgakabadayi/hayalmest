@@ -19,11 +19,12 @@ import {
   Edit3
 } from 'lucide-react';
 import { Reservation } from '@/lib/storage';
-import { ALL_TABLES, VENUE_SECTIONS } from '@/data/tablesData';
+import { ALL_TABLES, VENUE_SECTIONS, TableItem } from '@/data/tablesData';
 import { formatTableDisplay } from '@/lib/formatters';
 
 interface ReservationDetailModalProps {
   reservation: Reservation | null;
+  tables?: TableItem[];
   onClose: () => void;
   onStatusChange: (id: string, status: Reservation['status']) => void;
   onTableChange: (id: string, newTableId: string, newSectionId?: any) => void;
@@ -32,6 +33,7 @@ interface ReservationDetailModalProps {
 
 export default function ReservationDetailModal({
   reservation,
+  tables,
   onClose,
   onStatusChange,
   onTableChange,
@@ -42,11 +44,12 @@ export default function ReservationDetailModal({
 
   if (!reservation) return null;
 
+  const pool = (tables && tables.length > 0) ? tables : ALL_TABLES;
   const section = VENUE_SECTIONS.find(s => s.id === reservation.sectionId);
-  const formattedTable = formatTableDisplay(reservation.tableId, reservation.sectionId);
+  const formattedTable = formatTableDisplay(reservation.tableId, reservation.sectionId, pool);
 
   const handleApplyTableChange = () => {
-    const tableObj = ALL_TABLES.find(t => t.id === selectedNewTable);
+    const tableObj = pool.find(t => t.id === selectedNewTable);
     onTableChange(reservation.id, selectedNewTable, tableObj?.sectionId || reservation.sectionId);
     setIsChangingTable(false);
   };
@@ -169,7 +172,7 @@ export default function ReservationDetailModal({
                   onChange={(e) => setSelectedNewTable(e.target.value)}
                   className="w-full bg-meyhane-bg border border-gold/60 p-2 rounded-xl text-white text-xs"
                 >
-                  {ALL_TABLES.map(t => (
+                  {pool.map(t => (
                     <option key={t.id} value={t.id}>
                       {t.number} ({t.capacity} Kişi - {t.sectionId})
                     </option>

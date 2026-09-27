@@ -3,6 +3,7 @@ import './globals.css';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import WhatsAppButton from '@/components/WhatsAppButton';
+import MainLayout from '@/components/MainLayout';
 
 export const metadata: Metadata = {
   title: 'HayalMest Anadolu Meyhanesi | Bostancı Canlı Fasıl & Rezervasyon',
@@ -41,9 +42,9 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen flex flex-col bg-meyhane-bg text-gray-100 antialiased selection:bg-gold selection:text-black">
         <Navbar />
-        <main className="flex-grow pt-20">
+        <MainLayout>
           {children}
-        </main>
+        </MainLayout>
         <Footer />
         <WhatsAppButton />
       </body>

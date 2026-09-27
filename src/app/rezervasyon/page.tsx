@@ -25,11 +25,14 @@ import {
   Layers,
   LayoutGrid
 } from 'lucide-react';
-import { VENUE_SECTIONS, FIX_PACKAGES, ALL_TABLES } from '@/data/tablesData';
+import { VENUE_SECTIONS, FIX_PACKAGES, ALL_TABLES, TableItem } from '@/data/tablesData';
 import { StageEvent } from '@/data/eventsData';
-import { formatTableDisplay } from '@/lib/formatters';
+import { formatTableDisplay, setRegisteredTables } from '@/lib/formatters';
 import { getNextEventDate } from '@/lib/dateUtils';
 import SeatingFloorPlan from '@/components/SeatingFloorPlan';
+import InteractiveFloorPlan from '@/components/InteractiveFloorPlan';
+import { VenueElement } from '@/lib/tablesStorage';
+import { Reservation } from '@/lib/storage';
 
 function ReservationContent() {
   const searchParams = useSearchParams();
@@ -61,9 +64,12 @@ function ReservationContent() {
   // View mode in Step 3: 'map' (Kuşbakışı harita) or 'cards' (Bölge kartları)
   const [seatingViewMode, setSeatingViewMode] = useState<'map' | 'cards'>('map');
 
-  // Dynamic events and reservations
+  // Dynamic events, tables and reservations
   const [allEvents, setAllEvents] = useState<StageEvent[]>([]);
   const [currentDayEvent, setCurrentDayEvent] = useState<StageEvent | null>(null);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [tablesList, setTablesList] = useState<TableItem[]>(ALL_TABLES);
+  const [venueElements, setVenueElements] = useState<VenueElement[]>([]);
   const [occupiedTableIds, setOccupiedTableIds] = useState<string[]>([]);
 
   // Submission State
@@ -115,29 +121,37 @@ function ReservationContent() {
     setCurrentDayEvent(matched || (allEvents.length > 0 ? allEvents[0] : null));
   }, [date, allEvents]);
 
-  // Fetch occupied tables for selected date
+  // Fetch occupied tables and venue layout for selected date
   useEffect(() => {
     if (!date) return;
-    fetch('/api/reservations')
-      .then(res => res.json())
-      .then(json => {
-        if (json.success && Array.isArray(json.data)) {
-          const occ: string[] = [];
-          json.data.forEach((r: any) => {
-            if (r.date === date && r.status !== 'cancelled') {
-              if (r.tableId && r.tableId !== 'any' && !r.tableId.includes('-auto')) {
-                if (r.tableId.includes('+')) {
-                  occ.push(...r.tableId.split('+'));
-                } else {
-                  occ.push(r.tableId);
-                }
+    Promise.all([
+      fetch('/api/reservations').then(res => res.json()).catch(() => ({})),
+      fetch('/api/tables').then(res => res.json()).catch(() => ({})),
+    ]).then(([resJson, tablesJson]) => {
+      if (resJson?.success && Array.isArray(resJson.data)) {
+        setReservations(resJson.data);
+        const occ: string[] = [];
+        resJson.data.forEach((r: any) => {
+          if (r.date === date && r.status !== 'cancelled') {
+            if (r.tableId && r.tableId !== 'any' && !r.tableId.includes('-auto')) {
+              if (r.tableId.includes('+')) {
+                occ.push(...r.tableId.split('+'));
+              } else {
+                occ.push(r.tableId);
               }
             }
-          });
-          setOccupiedTableIds(occ);
+          }
+        });
+        setOccupiedTableIds(occ);
+      }
+      if (tablesJson?.success) {
+        if (tablesJson.tables?.length) {
+          setTablesList(tablesJson.tables);
+          setRegisteredTables(tablesJson.tables);
         }
-      })
-      .catch(err => console.error('Occupancy error:', err));
+        if (tablesJson.elements?.length) setVenueElements(tablesJson.elements);
+      }
+    }).catch(err => console.error('Data load error:', err));
   }, [date]);
 
   const currentSection = VENUE_SECTIONS.find(s => s.id === sectionId) || VENUE_SECTIONS[1];
@@ -531,16 +545,20 @@ function ReservationContent() {
               </div>
             </div>
 
-            {/* SEATING VIEW MODE: KUŞBAKIŞI HARİTA */}
+            {/* SEATING VIEW MODE: 2D MİMARİ KUŞBAKIŞI KROKİ */}
             {seatingViewMode === 'map' ? (
-              <SeatingFloorPlan
+              <InteractiveFloorPlan
+                tables={tablesList}
+                elements={venueElements}
+                reservations={reservations}
+                selectedDate={date}
                 selectedTableId={tableId}
-                onSelectTable={(selectedId, sId) => {
-                  setTableId(selectedId);
-                  if (sId) setSectionId(sId);
-                }}
+                mode="customer"
                 guestCount={guestCount}
-                occupiedTableIds={occupiedTableIds}
+                onSelectTable={(selectedTable) => {
+                  setTableId(selectedTable.id);
+                  setSectionId(selectedTable.sectionId);
+                }}
               />
             ) : (
               /* SEATING VIEW MODE: BÖLGE KARTLARI */
@@ -580,7 +598,7 @@ function ReservationContent() {
               <div className="flex items-center gap-2">
                 <span className="text-meyhane-muted">Seçilen Konum:</span>
                 <span className="font-bold text-white font-serif">
-                  {formatTableDisplay(tableId, sectionId)}
+                  {formatTableDisplay(tableId, sectionId, tablesList)}
                 </span>
                 <span className="text-[11px] text-gold">({currentSection.name})</span>
               </div>
@@ -799,7 +817,7 @@ function ReservationContent() {
                 <div>
                   <span className="text-meyhane-muted block">Masa:</span>
                   <span className="text-gold font-medium">
-                    {formatTableDisplay(tableId, sectionId)}
+                    {formatTableDisplay(tableId, sectionId, tablesList)}
                   </span>
                 </div>
               </div>
@@ -887,7 +905,7 @@ function ReservationContent() {
               <div className="flex justify-between py-1 border-b border-meyhane-border/50">
                 <span className="text-gray-400">Masa / Konum:</span>
                 <span className="text-gold font-semibold">
-                  {formatTableDisplay(confirmedReservation.tableId, confirmedReservation.sectionId)}
+                  {formatTableDisplay(confirmedReservation.tableId, confirmedReservation.sectionId, tablesList)}
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-meyhane-border/50">

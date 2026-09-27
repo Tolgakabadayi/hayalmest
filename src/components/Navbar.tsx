@@ -19,10 +19,14 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Hide customer navbar on admin and host desks to prevent overlapping dashboard
+  if (pathname?.startsWith('/admin') || pathname?.startsWith('/host')) {
+    return null;
+  }
+
   const navLinks = [
     { href: '/', label: 'Anasayfa' },
     { href: '/rezervasyon', label: 'Rezervasyon' },
-    { href: '/host', label: 'Host Masası' },
     { href: '/menu', label: 'Menümüz' },
     { href: '/etkinlikler', label: 'Canlı Sahne' },
     { href: '/galeri', label: 'Galeri' },
@@ -96,25 +100,6 @@ export default function Navbar() {
             <span className="hidden xl:inline">0530 501 24 58</span>
           </a>
 
-          {/* Admin Panel Link */}
-          <Link
-            href="/admin"
-            className="p-2 text-gray-400 hover:text-gold rounded-lg hover:bg-white/5 transition-colors"
-            title="Yönetici Paneli"
-          >
-            <ShieldCheck className="w-4 h-4" />
-          </Link>
-
-          {/* Host Desk Link */}
-          <Link
-            href="/host"
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gold bg-gold/10 hover:bg-gold/20 border border-gold/40 rounded-lg transition-colors shadow-sm"
-            title="Host & Karşılama Masası (Masa & PNR Sorgulama)"
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">Host Masası</span>
-          </Link>
-
           {/* Reserve CTA */}
           <Link
             href="/rezervasyon"
@@ -169,14 +154,6 @@ export default function Navbar() {
               <Phone className="w-4 h-4 text-gold" />
               0530 501 24 58 (Bizi Arayın)
             </a>
-            <Link
-              href="/admin"
-              onClick={() => setIsOpen(false)}
-              className="flex items-center justify-center gap-2 py-2 rounded-lg text-xs text-gray-400 hover:text-gray-200"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              İşletme Yönetim Paneli
-            </Link>
           </div>
         </div>
       )}

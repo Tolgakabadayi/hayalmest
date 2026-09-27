@@ -36,15 +36,26 @@ import {
   ChevronLeft,
   Sparkles,
   Crown,
-  UserCheck
+  UserCheck,
+  Download,
+  Mail,
+  History,
+  Star,
+  FileSpreadsheet,
+  BarChart2,
+  Menu,
+  ExternalLink,
+  ChevronUp
 } from 'lucide-react';
 import { Reservation } from '@/lib/storage';
+import { CustomerProfile } from '@/lib/customersStorage';
 import { ALL_TABLES, VENUE_SECTIONS, TableItem } from '@/data/tablesData';
 import { StageEvent } from '@/data/eventsData';
 import { MenuItem, MENU_CATEGORIES } from '@/data/menuData';
-import { formatTableDisplay } from '@/lib/formatters';
+import { formatTableDisplay, setRegisteredTables } from '@/lib/formatters';
 import ReservationDetailModal from '@/components/ReservationDetailModal';
 import FloorPlanDesigner from '@/components/FloorPlanDesigner';
+import InteractiveFloorPlan from '@/components/InteractiveFloorPlan';
 import { VenueElement } from '@/lib/tablesStorage';
 
 export default function AdminPage() {
@@ -52,7 +63,16 @@ export default function AdminPage() {
 
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<'reservations' | 'floor' | 'designer' | 'events' | 'menu' | 'content' | 'settings'>('reservations');
+  const [activeTab, setActiveTab] = useState<'reservations' | 'customers' | 'floor' | 'designer' | 'events' | 'menu' | 'content' | 'settings'>('reservations');
+
+  // Customers & CRM state
+  const [customers, setCustomers] = useState<CustomerProfile[]>([]);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerFilter, setCustomerFilter] = useState<'all' | 'vip' | 'regular' | 'new' | 'cancelled'>('all');
+  const [customerSort, setCustomerSort] = useState<'reservations' | 'guests' | 'lastVisit' | 'name'>('reservations');
+  const [selectedCustomerModal, setSelectedCustomerModal] = useState<CustomerProfile | null>(null);
+  const [editingCustomerNote, setEditingCustomerNote] = useState<CustomerProfile | null>(null);
+  const [customerNoteForm, setCustomerNoteForm] = useState({ isVip: false, adminNotes: '', allergyNotes: '', tags: '' });
 
   // Reservations state
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -61,11 +81,15 @@ export default function AdminPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [showStats, setShowStats] = useState(true);
+  const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
+  const [showMobileTabMenu, setShowMobileTabMenu] = useState(false);
 
   // Modals & Floor inspection state
   const [selectedReservationModal, setSelectedReservationModal] = useState<Reservation | null>(null);
   const [selectedFloorTable, setSelectedFloorTable] = useState<TableItem | null>(null);
   const [floorDate, setFloorDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [floorViewMode, setFloorViewMode] = useState<'canvas' | 'list'>('canvas');
 
   // Dynamic tables & elements
   const [tablesList, setTablesList] = useState<TableItem[]>(ALL_TABLES);
@@ -89,6 +113,13 @@ export default function AdminPage() {
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [pwMessage, setPwMessage] = useState('');
+
+  // User management state
+  const [userAdmins, setUserAdmins] = useState<any[]>([]);
+  const [userHosts, setUserHosts] = useState<any[]>([]);
+  const [showAddUserModal, setShowAddUserModal] = useState<'admin' | 'host' | null>(null);
+  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', displayName: '', name: '', pin: '', permissions: ['reservations'] as string[] });
+  const [userMsg, setUserMsg] = useState('');
 
   // Manual Reservation Modal
   const [showAddResModal, setShowAddResModal] = useState(false);
@@ -121,12 +152,14 @@ export default function AdminPage() {
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      const [resRes, eventsRes, menuRes, contentRes, tablesRes] = await Promise.all([
+      const [resRes, eventsRes, menuRes, contentRes, tablesRes, custRes, usersRes] = await Promise.all([
         fetch('/api/reservations').then(r => r.json()).catch(() => ({})),
         fetch('/api/events').then(r => r.json()).catch(() => ({})),
         fetch('/api/menu').then(r => r.json()).catch(() => ({})),
         fetch('/api/content').then(r => r.json()).catch(() => ({})),
         fetch('/api/tables').then(r => r.json()).catch(() => ({})),
+        fetch('/api/customers').then(r => r.json()).catch(() => ({})),
+        fetch('/api/admin/users').then(r => r.json()).catch(() => ({})),
       ]);
 
       if (resRes?.success) setReservations(resRes.data);
@@ -134,14 +167,89 @@ export default function AdminPage() {
       if (menuRes?.success) setMenuItems(menuRes.items);
       if (contentRes?.success) setSiteContent(contentRes.data);
       if (tablesRes?.success) {
-        if (tablesRes.tables?.length) setTablesList(tablesRes.tables);
+        if (tablesRes.tables?.length) {
+          setTablesList(tablesRes.tables);
+          setRegisteredTables(tablesRes.tables);
+        }
         if (tablesRes.elements?.length) setVenueElements(tablesRes.elements);
+      }
+      if (custRes?.success) setCustomers(custRes.data);
+      if (usersRes?.success) {
+        setUserAdmins(usersRes.admins || []);
+        setUserHosts(usersRes.hosts || []);
       }
     } catch (err) {
       console.error('Data fetch error:', err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchCustomers = async () => {
+    try {
+      const res = await fetch('/api/customers');
+      const json = await res.json();
+      if (json.success) setCustomers(json.data);
+    } catch (e) {
+      console.error('Error fetching customers:', e);
+    }
+  };
+
+  // Customer Notes & VIP Edit Handler
+  const handleSaveCustomerNotes = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCustomerNote) return;
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: editingCustomerNote.id,
+          isVip: customerNoteForm.isVip,
+          adminNotes: customerNoteForm.adminNotes,
+          allergyNotes: customerNoteForm.allergyNotes,
+          tags: customerNoteForm.tags.split(',').map(t => t.trim()).filter(Boolean),
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        await fetchCustomers();
+        setEditingCustomerNote(null);
+      } else {
+        alert(json.error || 'Not kaydedilemedi');
+      }
+    } catch (err) {
+      alert('Hata oluştu');
+    }
+  };
+
+  // Quick reservation pre-filler for specific customer
+  const handleQuickBookForCustomer = (cust: CustomerProfile) => {
+    setNewRes({
+      fullName: cust.fullName,
+      phone: cust.phone,
+      email: cust.email || '',
+      date: new Date().toISOString().split('T')[0],
+      time: '20:00',
+      serviceType: 'Canlı Fasıl Akşamı',
+      guestCount: 4,
+      occasion: 'Akşam Yemeği',
+      sectionId: (cust.favoriteSectionId as any) || 'salon',
+      tableId: cust.favoriteTable || 's-1',
+      packageId: 'premium_fix',
+      specialRequests: cust.allergyNotes ? `Özel Not / Hassasiyet: ${cust.allergyNotes}` : '',
+    });
+    setShowAddResModal(true);
+  };
+
+  // WhatsApp quick chat link generator
+  const getWhatsAppUrl = (phone: string, name: string) => {
+    const clean = phone.replace(/\D/g, '');
+    let intlPhone = clean;
+    if (clean.startsWith('0')) intlPhone = '90' + clean.slice(1);
+    else if (!clean.startsWith('90')) intlPhone = '90' + clean;
+    const text = encodeURIComponent(`Merhaba Sayın ${name}, HayalMest Meyhane'den ulaşıyoruz.`);
+    return `https://wa.me/${intlPhone}?text=${text}`;
   };
 
   // Table Change handler for ReservationDetailModal
@@ -158,6 +266,7 @@ export default function AdminPage() {
         if (selectedReservationModal && selectedReservationModal.id === id) {
           setSelectedReservationModal(prev => prev ? { ...prev, tableId: newTableId, sectionId: newSectionId || prev.sectionId } : null);
         }
+        fetchCustomers();
       }
     } catch (err) {
       alert('Masa güncellenirken hata oluştu');
@@ -207,6 +316,7 @@ export default function AdminPage() {
       const json = await res.json();
       if (json.success) {
         setReservations(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
+        fetchCustomers();
       }
     } catch (err) {
       alert('Durum güncellenirken hata oluştu');
@@ -220,6 +330,7 @@ export default function AdminPage() {
       const json = await res.json();
       if (json.success) {
         setReservations(prev => prev.filter(r => r.id !== id));
+        fetchCustomers();
       }
     } catch (err) {
       alert('Silme işlemi başarısız');
@@ -361,10 +472,14 @@ export default function AdminPage() {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Stats
-  const totalCount = reservations.length;
-  const pendingCount = reservations.filter(r => r.status === 'pending').length;
-  const confirmedCount = reservations.filter(r => r.status === 'confirmed').length;
+  // Aktif Rezervasyonlar: Geçmişte onaylanmamış (pending) rezervasyonlar istatistiklerde ve aktif listede görünmemeli
+  const activeReservations = reservations.filter(r => !(r.status === 'pending' && r.date < todayStr));
+
+  // Stats (Bugünden itibaren tutarlı istatistikler)
+  const totalCount = activeReservations.length;
+  // Onay Bekleyenler: SADECE bugünden itibaren olan ve teyit bekleyen rezervasyonlar
+  const pendingCount = reservations.filter(r => r.status === 'pending' && r.date >= todayStr).length;
+  const confirmedCount = reservations.filter(r => r.status === 'confirmed' && r.date >= todayStr).length;
   const todayGuests = reservations
     .filter(r => r.date === todayStr && r.status !== 'cancelled')
     .reduce((acc, curr) => acc + curr.guestCount, 0);
@@ -384,8 +499,8 @@ export default function AdminPage() {
       const dateStr = d.toISOString().split('T')[0];
       const dayName = d.toLocaleDateString('tr-TR', { weekday: 'short' });
       const dayDisplay = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
-      const resCount = reservations.filter(r => r.date === dateStr && r.status !== 'cancelled').length;
-      const guestTotal = reservations
+      const resCount = activeReservations.filter(r => r.date === dateStr && r.status !== 'cancelled').length;
+      const guestTotal = activeReservations
         .filter(r => r.date === dateStr && r.status !== 'cancelled')
         .reduce((acc, curr) => acc + curr.guestCount, 0);
       days.push({ dateStr, dayName, dayDisplay, resCount, guestTotal, isToday: dateStr === todayStr });
@@ -395,8 +510,8 @@ export default function AdminPage() {
 
   const weekDays = getWeekDays();
 
-  // Filtered reservations
-  const filtered = reservations.filter(r => {
+  // Filtered reservations (Geçmiş onaylanmamış rezervasyonlar hariç)
+  const filtered = activeReservations.filter(r => {
     const matchesSearch = 
       r.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       r.phone.includes(searchTerm) ||
@@ -412,156 +527,258 @@ export default function AdminPage() {
     return matchesSearch && matchesStatus && matchesDate;
   });
 
+  // Customer filtering & sorting
+  const filteredCustomers = customers
+    .filter(c => {
+      const q = customerSearch.toLowerCase().trim();
+      if (q) {
+        const matches = 
+          c.fullName.toLowerCase().includes(q) ||
+          c.phone.includes(q) ||
+          c.email.toLowerCase().includes(q) ||
+          c.adminNotes.toLowerCase().includes(q) ||
+          c.allergyNotes.toLowerCase().includes(q) ||
+          c.tags.some(t => t.toLowerCase().includes(q));
+        if (!matches) return false;
+      }
+
+      if (customerFilter === 'vip') return c.isVip;
+      if (customerFilter === 'regular') return c.totalReservations >= 2;
+      if (customerFilter === 'new') return c.totalReservations === 1;
+      if (customerFilter === 'cancelled') return c.cancelledCount > 0;
+      return true;
+    })
+    .sort((a, b) => {
+      if (customerSort === 'reservations') return b.totalReservations - a.totalReservations;
+      if (customerSort === 'guests') return b.totalGuests - a.totalGuests;
+      if (customerSort === 'lastVisit') return (b.lastVisit || '').localeCompare(a.lastVisit || '');
+      if (customerSort === 'name') return a.fullName.localeCompare(b.fullName, 'tr');
+      return 0;
+    });
+
+  const vipCustomerCount = customers.filter(c => c.isVip).length;
+  const totalGuestsAllCustomers = customers.reduce((sum, c) => sum + c.totalGuests, 0);
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className={`${activeTab === 'designer' ? 'max-w-[1850px]' : 'max-w-7xl'} mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5 transition-all duration-300 pb-28 sm:pb-32`}>
       
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-meyhane-border pb-6">
+      {/* Top Header - Minimalist & Hamburger Centric */}
+      <div className="flex items-center justify-between gap-3 border-b border-meyhane-border/70 pb-3 sm:pb-4">
         <div>
-          <div className="inline-flex items-center gap-2 text-xs uppercase tracking-wider text-gold font-semibold mb-1">
-            <ShieldCheck className="w-4 h-4" />
-            HayalMest Yönetim &amp; CMS Paneli
+          <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-gold font-semibold">
+            <ShieldCheck className="w-3.5 h-3.5 text-gold" />
+            <span>HayalMest Yönetim Paneli</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-serif text-white">
+          <h1 className="text-xl sm:text-2xl font-bold font-serif text-white tracking-wide">
             Kontrol &amp; Karşılama Masası
           </h1>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={fetchAllData}
-            className="p-2.5 rounded-xl bg-meyhane-surface border border-meyhane-border text-gray-300 hover:text-white transition-colors"
-            title="Tüm Verileri Yenile"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-gold' : ''}`} />
-          </button>
-
-          <Link
-            href="/host"
-            className="px-3.5 py-2.5 rounded-xl bg-meyhane-surface hover:bg-gold/15 border border-gold/40 text-gold text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 transition-colors shadow-sm"
-            title="Host & Karşılama Masası (Kapı Masa Bulucu)"
-          >
-            <UserCheck className="w-4 h-4" />
-            <span>Host Masası</span>
-          </Link>
-
+        <div className="flex items-center gap-2 sm:gap-2.5">
           <button
             onClick={() => setShowAddResModal(true)}
-            className="px-4 py-2.5 rounded-xl bg-gold text-black font-semibold text-xs uppercase tracking-wider hover:brightness-110 flex items-center gap-1.5 shadow-lg shadow-gold/20"
+            className="px-3 sm:px-4 py-2 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider hover:brightness-110 flex items-center gap-1.5 shadow-md shadow-gold/20 whitespace-nowrap"
           >
-            <Plus className="w-4 h-4" />
-            <span>Telefonla Rezervasyon</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Rezervasyon</span>
           </button>
 
+          {/* Hamburger Menu Trigger Button */}
           <button
-            onClick={handleLogout}
-            className="px-3.5 py-2.5 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 hover:bg-red-900/50 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            type="button"
+            onClick={() => setShowHamburgerMenu(true)}
+            className="p-2 sm:px-3 sm:py-2 rounded-xl bg-meyhane-surface hover:bg-gold/15 border border-gold/40 text-gold flex items-center gap-1.5 transition-all shadow-md"
+            title="Yönetim Menüsü"
           >
-            <LogOut className="w-4 h-4" />
-            <span>Çıkış</span>
+            <Menu className="w-5 h-5 text-gold" />
+            <span className="hidden sm:inline text-xs font-semibold">Menü</span>
           </button>
         </div>
       </div>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-meyhane-surface border border-meyhane-border space-y-1">
-          <div className="text-xs text-meyhane-muted uppercase tracking-wider">Bugün Beklenen Misafir</div>
-          <div className="text-2xl sm:text-3xl font-bold font-serif text-gold">{todayGuests} Kişi</div>
-          <div className="text-[11px] text-gray-400">Aktif masalar toplamı</div>
+      {/* Stats Row - Compact & Single-Line Swipeable Strip on Mobile, 5-Cols on Desktop */}
+      {showStats && (
+        <div className="overflow-x-auto scrollbar-none flex sm:grid sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3 animate-fadeIn -mx-1 sm:mx-0 pb-1">
+          <div className="flex-shrink-0 min-w-[135px] sm:min-w-0 p-2.5 sm:p-3 rounded-2xl bg-meyhane-surface/85 border border-meyhane-border space-y-0.5 shadow-sm">
+            <div className="text-[10px] text-meyhane-muted uppercase tracking-wider font-semibold">Bugün Beklenen</div>
+            <div className="text-xl sm:text-2xl font-bold font-serif text-gold">{todayGuests} Kişi</div>
+            <div className="text-[10px] text-gray-400">Aktif masalar toplamı</div>
+          </div>
+
+          <div className="flex-shrink-0 min-w-[135px] sm:min-w-0 p-2.5 sm:p-3 rounded-2xl bg-meyhane-surface/85 border border-meyhane-border space-y-0.5 shadow-sm">
+            <div className="text-[10px] text-meyhane-muted uppercase tracking-wider font-semibold">Onay Bekleyen</div>
+            <div className="text-xl sm:text-2xl font-bold font-serif text-amber-400">{pendingCount}</div>
+            <div className="text-[10px] text-gray-400">Teyit bekleyen misafir</div>
+          </div>
+
+          <div className="flex-shrink-0 min-w-[135px] sm:min-w-0 p-2.5 sm:p-3 rounded-2xl bg-meyhane-surface/85 border border-gold/40 space-y-0.5 bg-gradient-to-br from-gold/5 to-transparent shadow-sm">
+            <div className="text-[10px] text-gold uppercase tracking-wider font-semibold flex items-center gap-1">
+              <Crown className="w-3 h-3 text-gold" />
+              <span>Misafir Portföyü</span>
+            </div>
+            <div className="text-xl sm:text-2xl font-bold font-serif text-gold">{customers.length} Kişi</div>
+            <div className="text-[10px] text-amber-200/70">{vipCustomerCount} VIP &amp; Müdavim</div>
+          </div>
+
+          <div className="flex-shrink-0 min-w-[135px] sm:min-w-0 p-2.5 sm:p-3 rounded-2xl bg-meyhane-surface/85 border border-meyhane-border space-y-0.5 shadow-sm">
+            <div className="text-[10px] text-meyhane-muted uppercase tracking-wider font-semibold">Canlı Sahne</div>
+            <div className="text-xl sm:text-2xl font-bold font-serif text-emerald-400">{events.length}</div>
+            <div className="text-[10px] text-gray-400">Haftalık sahne programı</div>
+          </div>
+
+          <div className="flex-shrink-0 min-w-[135px] sm:min-w-0 p-2.5 sm:p-3 rounded-2xl bg-meyhane-surface/85 border border-meyhane-border space-y-0.5 shadow-sm">
+            <div className="text-[10px] text-meyhane-muted uppercase tracking-wider font-semibold">Kayıtlı Menü</div>
+            <div className="text-xl sm:text-2xl font-bold font-serif text-white">{menuItems.length}</div>
+            <div className="text-[10px] text-gray-400">Meze, kebap ve içkiler</div>
+          </div>
         </div>
+      )}
 
-        <div className="p-5 rounded-2xl bg-meyhane-surface border border-meyhane-border space-y-1">
-          <div className="text-xs text-meyhane-muted uppercase tracking-wider">Onay Bekleyenler</div>
-          <div className="text-2xl sm:text-3xl font-bold font-serif text-amber-400">{pendingCount}</div>
-          <div className="text-[11px] text-gray-400">Teyit bekleyen misafir</div>
-        </div>
+      {/* NAVIGATION TABS: DESKTOP FLOATING DOCK & MOBILE EXPANDABLE FLOATING MENU */}
+      {(() => {
+        interface TabItem {
+          id: 'reservations' | 'customers' | 'floor' | 'designer' | 'events' | 'menu' | 'content' | 'settings';
+          label: string;
+          count?: number;
+          icon: React.ComponentType<{ className?: string }>;
+          iconColor?: string;
+        }
 
-        <div className="p-5 rounded-2xl bg-meyhane-surface border border-meyhane-border space-y-1">
-          <div className="text-xs text-meyhane-muted uppercase tracking-wider">Aktif Canlı Etkinlikler</div>
-          <div className="text-2xl sm:text-3xl font-bold font-serif text-emerald-400">{events.length}</div>
-          <div className="text-[11px] text-gray-400">Haftalık sahne programı</div>
-        </div>
+        const adminTabs: TabItem[] = [
+          { id: 'reservations', label: 'Rezervasyonlar', count: activeReservations.length, icon: Users },
+          { id: 'customers', label: 'Misafirler', count: customers.length, icon: Crown, iconColor: 'text-amber-400' },
+          { id: 'floor', label: 'Kuşbakışı', icon: Layers },
+          { id: 'designer', label: 'Tasarımcı', icon: Palette, iconColor: 'text-gold' },
+          { id: 'events', label: 'Sahne', count: events.length, icon: Music },
+          { id: 'menu', label: 'Menü', icon: Utensils },
+          { id: 'content', label: 'Galeri', icon: Camera },
+          { id: 'settings', label: 'Ayarlar', icon: Settings },
+        ];
 
-        <div className="p-5 rounded-2xl bg-meyhane-surface border border-meyhane-border space-y-1">
-          <div className="text-xs text-meyhane-muted uppercase tracking-wider">Kayıtlı Menü Ürünü</div>
-          <div className="text-2xl sm:text-3xl font-bold font-serif text-white">{menuItems.length}</div>
-          <div className="text-[11px] text-gray-400">Meze, kebap ve içkiler</div>
-        </div>
-      </div>
+        const currentTabMeta = adminTabs.find(t => t.id === activeTab) || adminTabs[0];
+        const CurrentTabIcon = currentTabMeta.icon;
 
-      {/* Main Navigation Tabs */}
-      <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-meyhane-surface border border-meyhane-border">
-        <button
-          onClick={() => setActiveTab('reservations')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2 ${
-            activeTab === 'reservations' ? 'bg-gold text-black shadow-md' : 'text-gray-300 hover:text-white'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Rezervasyonlar ({reservations.length})</span>
-        </button>
+        return (
+          <>
+            {/* DESKTOP FLOATING NAVIGATION DOCK (sm ve üzeri ekranlar) */}
+            <div className="hidden sm:flex fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-[96vw] bg-black/85 backdrop-blur-2xl border border-gold/40 shadow-[0_12px_45px_rgba(0,0,0,0.85)] rounded-full p-1.5 items-center gap-1 overflow-x-auto scrollbar-none animate-fadeIn ring-1 ring-white/10">
+              {adminTabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                      isActive
+                        ? 'bg-gold text-black shadow-lg shadow-gold/30 font-bold scale-105'
+                        : 'text-gray-300 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-black' : (tab.iconColor || 'text-current')}`} />
+                    <span>{tab.label} {tab.count !== undefined ? `(${tab.count})` : ''}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-        <button
-          onClick={() => setActiveTab('floor')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2 ${
-            activeTab === 'floor' ? 'bg-gold text-black shadow-md' : 'text-gray-300 hover:text-white'
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          <span>Kuşbakışı Masa Durumu</span>
-        </button>
+            {/* MOBILE FLOATING EXPANDABLE MENU (Yüzen Açılır Menü) */}
+            <div className="sm:hidden">
+              {/* Trigger Pill Button */}
+              <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40">
+                <button
+                  type="button"
+                  onClick={() => setShowMobileTabMenu(!showMobileTabMenu)}
+                  className="flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-[#10141D]/95 backdrop-blur-2xl border border-gold/50 shadow-[0_10px_35px_rgba(0,0,0,0.9)] text-white active:scale-95 transition-all ring-1 ring-white/10"
+                >
+                  <div className="w-6 h-6 rounded-full bg-gold/20 border border-gold/40 flex items-center justify-center text-gold">
+                    <CurrentTabIcon className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="text-left flex items-center gap-1.5">
+                    <span className="text-xs font-bold font-serif text-white">{currentTabMeta.label}</span>
+                    {currentTabMeta.count !== undefined && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-gold/20 text-gold text-[10px] font-bold">
+                        {currentTabMeta.count}
+                      </span>
+                    )}
+                  </div>
+                  <div className={`p-1 rounded-full bg-white/10 text-gold transition-transform duration-300 ${showMobileTabMenu ? 'rotate-180' : ''}`}>
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </div>
+                </button>
+              </div>
 
-        <button
-          onClick={() => setActiveTab('designer')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2 ${
-            activeTab === 'designer' ? 'bg-gold text-black shadow-md' : 'text-gray-300 hover:text-white'
-          }`}
-        >
-          <Palette className="w-4 h-4" />
-          <span>🎨 Salon Tasarımcısı</span>
-        </button>
+              {/* Backdrop & Floating Popup Drawer */}
+              {showMobileTabMenu && (
+                <>
+                  <div
+                    onClick={() => setShowMobileTabMenu(false)}
+                    className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm animate-fadeIn"
+                  />
+                  <div className="fixed bottom-20 left-4 right-4 z-50 max-w-sm mx-auto luxury-card rounded-3xl p-4 border border-gold/40 shadow-[0_20px_60px_rgba(0,0,0,0.95)] animate-fadeIn space-y-3 bg-[#131722]/98 backdrop-blur-2xl">
+                    <div className="flex items-center justify-between border-b border-meyhane-border/70 pb-2.5 px-1">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-gold" />
+                        <span className="text-xs font-bold uppercase tracking-wider text-white font-serif">
+                          Yönetim Sekmeleri
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowMobileTabMenu(false)}
+                        className="p-1 rounded-lg text-gray-400 hover:text-white"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
 
-        <button
-          onClick={() => setActiveTab('events')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2 ${
-            activeTab === 'events' ? 'bg-gold text-black shadow-md' : 'text-gray-300 hover:text-white'
-          }`}
-        >
-          <Music className="w-4 h-4" />
-          <span>Sahne &amp; Etkinlik Yönetimi ({events.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('menu')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2 ${
-            activeTab === 'menu' ? 'bg-gold text-black shadow-md' : 'text-gray-300 hover:text-white'
-          }`}
-        >
-          <Utensils className="w-4 h-4" />
-          <span>Menü &amp; Fiyat Yönetimi</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('content')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2 ${
-            activeTab === 'content' ? 'bg-gold text-black shadow-md' : 'text-gray-300 hover:text-white'
-          }`}
-        >
-          <Camera className="w-4 h-4" />
-          <span>Fotoğraf &amp; Hero Yönetimi</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('settings')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-2 ${
-            activeTab === 'settings' ? 'bg-gold text-black shadow-md' : 'text-gray-300 hover:text-white'
-          }`}
-        >
-          <Settings className="w-4 h-4" />
-          <span>Site Ayarları &amp; Şifre</span>
-        </button>
-      </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {adminTabs.map((tab) => {
+                        const Icon = tab.icon;
+                        const isActive = activeTab === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveTab(tab.id as any);
+                              setShowMobileTabMenu(false);
+                            }}
+                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between gap-1.5 ${
+                              isActive
+                                ? 'bg-gold text-black border-gold shadow-lg shadow-gold/25 font-bold'
+                                : 'bg-meyhane-surface/80 border-meyhane-border hover:border-gold/40 text-gray-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between w-full">
+                              <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${
+                                isActive ? 'bg-black/20 text-black' : 'bg-white/5 text-gold'
+                              }`}>
+                                <Icon className="w-4 h-4" />
+                              </div>
+                              {tab.count !== undefined && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                                  isActive ? 'bg-black/20 text-black' : 'bg-gold/15 text-gold'
+                                }`}>
+                                  {tab.count}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs font-medium tracking-tight">
+                              {tab.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        );
+      })()}
 
       {/* TAB 1: REZERVASYONLAR */}
       {activeTab === 'reservations' && (
@@ -584,7 +801,7 @@ export default function AdminPage() {
                       : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10'
                   }`}
                 >
-                  Tüm Tarihler ({reservations.length})
+                  Tüm Tarihler ({activeReservations.length})
                 </button>
                 <button
                   type="button"
@@ -766,7 +983,7 @@ export default function AdminPage() {
                           <td className="py-4 px-4 space-y-1">
                             <div className="font-bold text-white text-sm">{res.guestCount} Kişi</div>
                             <div className="text-gold text-[11px] font-semibold">
-                              {formatTableDisplay(res.tableId, res.sectionId)}
+                              {formatTableDisplay(res.tableId, res.sectionId, tablesList)}
                             </div>
                             <div className="text-[10px] text-gray-400">{res.occasion}</div>
                           </td>
@@ -888,14 +1105,360 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* TAB 2: KUŞBAKIŞI SALON DURUMU */}
-      {activeTab === 'floor' && (
+      {/* TAB: MİSAFİRLER / MÜŞTERİ CRM */}
+      {activeTab === 'customers' && (
         <div className="space-y-6 animate-fadeIn">
+          {/* CRM Summary Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="p-4 rounded-2xl bg-meyhane-surface border border-meyhane-border space-y-1">
+              <div className="text-xs text-meyhane-muted uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-gold" />
+                <span>Toplam Kayıtlı Misafir</span>
+              </div>
+              <div className="text-2xl font-bold font-serif text-white">{customers.length} Kişi</div>
+              <div className="text-[11px] text-gray-400">Tekil iletişim kaydı</div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-meyhane-surface border border-gold/40 space-y-1 bg-gradient-to-br from-gold/5 to-transparent">
+              <div className="text-xs text-gold uppercase tracking-wider flex items-center gap-1.5 font-semibold">
+                <Crown className="w-3.5 h-3.5 text-gold" />
+                <span>VIP &amp; Müdavimler</span>
+              </div>
+              <div className="text-2xl font-bold font-serif text-gold">{vipCustomerCount} Kişi</div>
+              <div className="text-[11px] text-amber-200/70">Sadık &amp; özel misafirler</div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-meyhane-surface border border-meyhane-border space-y-1">
+              <div className="text-xs text-meyhane-muted uppercase tracking-wider flex items-center gap-1.5">
+                <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Ağırlanan Toplam Kişi</span>
+              </div>
+              <div className="text-2xl font-bold font-serif text-emerald-400">{totalGuestsAllCustomers} Misafir</div>
+              <div className="text-[11px] text-gray-400">Getirilen toplam misafir</div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-meyhane-surface border border-meyhane-border space-y-1">
+              <div className="text-xs text-meyhane-muted uppercase tracking-wider flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                <span>Toplam Rezervasyon</span>
+              </div>
+              <div className="text-2xl font-bold font-serif text-blue-400">
+                {customers.reduce((acc, c) => acc + c.totalReservations, 0)}
+              </div>
+              <div className="text-[11px] text-gray-400">Sistemdeki tüm kayıtlar</div>
+            </div>
+          </div>
+
+          {/* CRM Controls & Action Bar */}
+          <div className="p-4 rounded-2xl bg-meyhane-surface border border-meyhane-border flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg">
+            {/* Search Input */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Misafir adı, telefon, e-posta, etiket veya not ara..."
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                className="w-full bg-meyhane-bg border border-meyhane-border pl-9 pr-3 py-2.5 rounded-xl text-xs text-white focus:border-gold focus:outline-none"
+              />
+              {customerSearch && (
+                <button
+                  type="button"
+                  onClick={() => setCustomerSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Filter Pills */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCustomerFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  customerFilter === 'all'
+                    ? 'bg-gold text-black shadow-md font-bold'
+                    : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                Tümü ({customers.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setCustomerFilter('vip')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  customerFilter === 'vip'
+                    ? 'bg-amber-400 text-black shadow-md font-bold'
+                    : 'bg-white/5 text-amber-300 hover:bg-white/10'
+                }`}
+              >
+                <Crown className="w-3.5 h-3.5" />
+                <span>VIP &amp; Müdavim ({customers.filter(c => c.isVip).length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCustomerFilter('new')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  customerFilter === 'new'
+                    ? 'bg-emerald-500 text-black shadow-md font-bold'
+                    : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                Yeni ({customers.filter(c => c.totalReservations === 1).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setCustomerFilter('cancelled')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                  customerFilter === 'cancelled'
+                    ? 'bg-red-500 text-white shadow-md font-bold'
+                    : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                İptalli ({customers.filter(c => c.cancelledCount > 0).length})
+              </button>
+            </div>
+
+            {/* Sort & Excel Export */}
+            <div className="flex items-center gap-2.5">
+              <select
+                value={customerSort}
+                onChange={(e) => setCustomerSort(e.target.value as any)}
+                className="bg-meyhane-bg border border-meyhane-border px-3 py-2 rounded-xl text-xs text-white focus:border-gold focus:outline-none cursor-pointer"
+              >
+                <option value="reservations">Sırala: En Çok Gelenler</option>
+                <option value="guests">Sırala: En Çok Misafir Getirenler</option>
+                <option value="lastVisit">Sırala: En Son Ziyaret</option>
+                <option value="name">Sırala: İsim (A-Z)</option>
+              </select>
+
+              <a
+                href="/api/customers?export=csv"
+                download
+                className="px-3.5 py-2 rounded-xl bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 hover:text-white border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+                title="Tüm müşteri portföyünü Excel / CSV olarak indir"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span className="hidden sm:inline">Excel / CSV İndir</span>
+              </a>
+            </div>
+          </div>
+
+          {/* Customer Cards Grid */}
+          {filteredCustomers.length === 0 ? (
+            <div className="p-12 text-center text-meyhane-muted luxury-card rounded-2xl border border-meyhane-border space-y-2">
+              <Users className="w-10 h-10 mx-auto text-gold opacity-50" />
+              <p className="text-sm">Arama kriterlerine uygun misafir bulunamadı.</p>
+              <button
+                type="button"
+                onClick={() => { setCustomerSearch(''); setCustomerFilter('all'); }}
+                className="text-gold text-xs underline font-semibold mt-2"
+              >
+                Filtreleri Temizle
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredCustomers.map((cust) => {
+                const initials = cust.fullName
+                  .split(' ')
+                  .map(n => n[0])
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase() || 'M';
+
+                return (
+                  <div
+                    key={cust.id}
+                    className={`luxury-card rounded-2xl border p-5 space-y-4 shadow-xl transition-all hover:border-gold/60 relative ${
+                      cust.isVip
+                        ? 'border-amber-500/60 bg-gradient-to-b from-amber-950/20 to-meyhane-surface'
+                        : 'border-meyhane-border'
+                    }`}
+                  >
+                    {/* Card Header */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm shadow-md font-serif relative ${
+                          cust.isVip
+                            ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-black ring-2 ring-gold/60'
+                            : 'bg-white/10 text-white border border-white/15'
+                        }`}>
+                          {initials}
+                          {cust.isVip && (
+                            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-black text-amber-400 border border-gold flex items-center justify-center text-[9px]">
+                              👑
+                            </span>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-bold text-white font-serif">
+                              {cust.fullName}
+                            </h3>
+                            {cust.isVip && (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 text-[10px] font-bold">
+                                VIP
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-gray-400 font-mono">
+                            {cust.phone}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quick Communication Actions */}
+                      <div className="flex items-center gap-1.5">
+                        <a
+                          href={getWhatsAppUrl(cust.phone, cust.fullName)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-colors"
+                          title="WhatsApp ile Mesaj Gönder"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                        </a>
+                        <a
+                          href={`tel:${cust.phone.replace(/\s+/g, '')}`}
+                          className="p-2 rounded-xl bg-white/5 border border-white/15 text-gray-300 hover:text-gold hover:border-gold transition-colors"
+                          title="Telefonla Ara"
+                        >
+                          <Phone className="w-3.5 h-3.5" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Email if available */}
+                    {cust.email && (
+                      <div className="text-[11px] text-gray-400 flex items-center gap-1.5 truncate">
+                        <Mail className="w-3 h-3 text-gold flex-shrink-0" />
+                        <span className="truncate">{cust.email}</span>
+                      </div>
+                    )}
+
+                    {/* Customer Stats Strip */}
+                    <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-meyhane-bg/70 border border-meyhane-border/70 text-center text-xs">
+                      <div>
+                        <div className="text-[10px] text-meyhane-muted uppercase">Ziyaret</div>
+                        <div className="font-bold text-gold font-serif text-sm">
+                          {cust.totalReservations}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-meyhane-muted uppercase">Toplam Kişi</div>
+                        <div className="font-bold text-white font-serif text-sm">
+                          {cust.totalGuests}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-meyhane-muted uppercase">Favori Alan</div>
+                        <div className="font-bold text-emerald-400 truncate text-[11px] mt-0.5">
+                          {cust.favoriteSection}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Tags List */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {cust.tags.map((tag, tIdx) => (
+                        <span
+                          key={tIdx}
+                          className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-gray-300 text-[10px] font-medium"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Admin Notes / Allergy Highlights */}
+                    {(cust.adminNotes || cust.allergyNotes) && (
+                      <div className="p-2.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-xs space-y-1">
+                        {cust.adminNotes && (
+                          <div className="text-amber-200 text-[11px] flex items-start gap-1.5">
+                            <span className="text-gold font-bold">📌 Not:</span>
+                            <span className="line-clamp-2">{cust.adminNotes}</span>
+                          </div>
+                        )}
+                        {cust.allergyNotes && (
+                          <div className="text-red-300 text-[11px] flex items-start gap-1.5">
+                            <span className="font-bold">⚠️ Hassasiyet:</span>
+                            <span className="line-clamp-1">{cust.allergyNotes}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Last Visit Footer */}
+                    <div className="pt-2 border-t border-meyhane-border/60 flex items-center justify-between text-[11px] text-gray-400">
+                      <span>Son Ziyaret: <strong className="text-white">{cust.lastVisit || '-'}</strong></span>
+                      <span className="text-[10px] text-emerald-400 font-semibold">
+                        {cust.confirmedCount + cust.seatedCount} Başarılı
+                        {cust.cancelledCount > 0 && ` • ${cust.cancelledCount} İptal`}
+                      </span>
+                    </div>
+
+                    {/* Card Actions */}
+                    <div className="grid grid-cols-3 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCustomerModal(cust)}
+                        className="py-2 px-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-200 text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors"
+                        title="Tüm Rezervasyon Geçmişini Gör"
+                      >
+                        <History className="w-3.5 h-3.5 text-gold" />
+                        <span>Geçmiş</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingCustomerNote(cust);
+                          setCustomerNoteForm({
+                            isVip: cust.isVip,
+                            adminNotes: cust.adminNotes,
+                            allergyNotes: cust.allergyNotes,
+                            tags: cust.tags.filter(t => !t.includes('VIP') && !t.includes('Misafir') && !t.includes('Grup') && !t.includes('İptal')).join(', '),
+                          });
+                        }}
+                        className="py-2 px-2 rounded-xl bg-white/5 hover:bg-gold/20 hover:text-gold border border-white/10 text-gray-200 text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors"
+                        title="Yönetici Notu &amp; VIP Ayarla"
+                      >
+                        <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Not Düzenle</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleQuickBookForCustomer(cust)}
+                        className="py-2 px-2 rounded-xl bg-gold text-black hover:brightness-110 font-bold text-[11px] flex items-center justify-center gap-1 transition-all shadow-sm"
+                        title="Bu Müşteriye Hızlı Rezervasyon Oluştur"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Rezervasyon</span>
+                      </button>
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 2: KUŞBAKIŞI SALON DURUMU & 2D MİMARİ KROKİ */}
+      {activeTab === 'floor' && (
+        <div className="space-y-4 animate-fadeIn">
           {/* Floor Date & Controls Header */}
           <div className="p-4 rounded-2xl bg-meyhane-surface border border-gold/30 flex flex-wrap items-center justify-between gap-4 text-xs shadow-lg">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-gold font-semibold flex items-center gap-1.5">
-                <Calendar className="w-4 h-4" />
+              <span className="text-gold font-semibold flex items-center gap-1.5 font-serif text-sm">
+                <Calendar className="w-4 h-4 text-gold" />
                 İncelenen Tarih:
               </span>
               <input
@@ -908,7 +1471,7 @@ export default function AdminPage() {
                 type="button"
                 onClick={() => setFloorDate(todayStr)}
                 className={`px-3 py-1.5 rounded-xl font-semibold transition-all ${
-                  floorDate === todayStr ? 'bg-gold text-black shadow-md' : 'bg-white/5 text-gray-300 hover:text-white'
+                  floorDate === todayStr ? 'bg-gold text-black shadow-md font-bold' : 'bg-white/5 text-gray-300 hover:text-white'
                 }`}
               >
                 Bugün
@@ -918,7 +1481,9 @@ export default function AdminPage() {
               {(() => {
                 const dayReservations = reservations.filter(r => r.date === floorDate && r.status !== 'cancelled');
                 const dayGuests = dayReservations.reduce((acc, curr) => acc + curr.guestCount, 0);
-                const occupiedCount = dayReservations.length;
+                const occupiedCount = tablesList.filter(t => 
+                  reservations.some(r => r.date === floorDate && r.status !== 'cancelled' && (r.tableId === t.id || r.tableId?.includes(t.id)))
+                ).length;
                 const totalTblCount = tablesList.length;
                 const availableCount = Math.max(0, totalTblCount - occupiedCount);
 
@@ -934,17 +1499,34 @@ export default function AdminPage() {
               })()}
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-3 text-[11px]">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></span> Müsait
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50"></span> Rezerve
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50"></span> Masada
-                </span>
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* View Mode Toggle: 2D Kroki (Default) vs Section List */}
+              <div className="flex items-center bg-meyhane-bg p-1 rounded-xl border border-meyhane-border text-xs">
+                <button
+                  type="button"
+                  onClick={() => setFloorViewMode('canvas')}
+                  className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 ${
+                    floorViewMode === 'canvas'
+                      ? 'bg-gold text-black shadow-md font-bold'
+                      : 'text-gray-300 hover:text-white'
+                  }`}
+                  title="2D Mimari Kroki Görünümü"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>2D Mimari Kroki</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFloorViewMode('list')}
+                  className={`px-3 py-1.5 rounded-lg font-semibold transition-all flex items-center gap-1.5 ${
+                    floorViewMode === 'list'
+                      ? 'bg-gold text-black shadow-md font-bold'
+                      : 'text-gray-300 hover:text-white'
+                  }`}
+                  title="Bölüm Kartları Listesi"
+                >
+                  <span>Bölüm Listesi</span>
+                </button>
               </div>
 
               <button
@@ -953,93 +1535,116 @@ export default function AdminPage() {
                 className="px-3.5 py-2 rounded-xl bg-gold/15 border border-gold/40 text-gold hover:bg-gold hover:text-black font-semibold flex items-center gap-1.5 transition-all shadow-md"
               >
                 <Palette className="w-3.5 h-3.5" />
-                <span>Salon Tasarımcısı</span>
+                <span className="hidden sm:inline">Salon Tasarımcısı</span>
               </button>
             </div>
           </div>
 
-          {/* Floor Plan Sections */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {VENUE_SECTIONS.map((sec) => {
-              const secTables = tablesList.filter(t => t.sectionId === sec.id);
-              const displayTables = secTables.length > 0 ? secTables : sec.tables;
+          {/* 1. INTERACTIVE 2D BLUEPRINT FLOOR PLAN (Default & Prominent) */}
+          {floorViewMode === 'canvas' ? (
+            <InteractiveFloorPlan
+              tables={tablesList}
+              elements={venueElements}
+              reservations={reservations}
+              selectedDate={floorDate}
+              selectedTableId={selectedFloorTable?.id}
+              onSelectTable={(table) => setSelectedFloorTable(table)}
+              onQuickBookTable={(table) => {
+                setNewRes({
+                  ...newRes,
+                  date: floorDate,
+                  tableId: table.id,
+                  sectionId: table.sectionId,
+                  guestCount: table.capacity,
+                });
+                setShowAddResModal(true);
+              }}
+              onStatusChange={handleStatusChange}
+            />
+          ) : (
+            /* 2. SECTION LIST VIEW (Alternative fallback) */
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {VENUE_SECTIONS.map((sec) => {
+                const secTables = tablesList.filter(t => t.sectionId === sec.id);
+                const displayTables = secTables.length > 0 ? secTables : sec.tables;
 
-              return (
-                <div
-                  key={sec.id}
-                  className="luxury-card p-6 rounded-3xl border border-meyhane-border space-y-4 shadow-xl"
-                >
-                  <div className="flex items-center justify-between border-b border-meyhane-border/70 pb-3">
-                    <div>
-                      <h2 className="text-base font-bold font-serif text-white">{sec.name}</h2>
-                      <span className="text-[11px] text-meyhane-muted">{sec.shortDesc}</span>
+                return (
+                  <div
+                    key={sec.id}
+                    className="luxury-card p-6 rounded-3xl border border-meyhane-border space-y-4 shadow-xl"
+                  >
+                    <div className="flex items-center justify-between border-b border-meyhane-border/70 pb-3">
+                      <div>
+                        <h2 className="text-base font-bold font-serif text-white">{sec.name}</h2>
+                        <span className="text-[11px] text-meyhane-muted">{sec.shortDesc}</span>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-md bg-gold/15 text-gold text-xs font-semibold">
+                        {sec.badge}
+                      </span>
                     </div>
-                    <span className="px-2.5 py-1 rounded-md bg-gold/15 text-gold text-xs font-semibold">
-                      {sec.badge}
-                    </span>
-                  </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {displayTables.map((tbl) => {
-                      const matchedRes = reservations.find(
-                        r => r.date === floorDate && 
-                             r.status !== 'cancelled' && 
-                             (r.tableId === tbl.id || (r.tableId && r.tableId.includes(tbl.id)))
-                      );
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {displayTables.map((tbl) => {
+                        const matchedRes = reservations.find(
+                          r => r.date === floorDate && 
+                               r.status !== 'cancelled' && 
+                               (r.tableId === tbl.id || (r.tableId && r.tableId.includes(tbl.id)))
+                        );
 
-                      const isOccupied = !!matchedRes;
-                      const isSeated = matchedRes?.status === 'seated';
+                        const isOccupied = !!matchedRes;
+                        const isSeated = matchedRes?.status === 'seated';
 
-                      return (
-                        <button
-                          type="button"
-                          key={tbl.id}
-                          onClick={() => setSelectedFloorTable(tbl)}
-                          className={`p-3.5 rounded-2xl border text-left space-y-1 transition-all w-full cursor-pointer hover:scale-[1.03] active:scale-95 group ${
-                            isSeated
-                              ? 'bg-blue-950/40 border-blue-500/60 text-blue-200 shadow-md ring-1 ring-blue-500/40'
-                              : isOccupied
-                              ? 'bg-amber-950/30 border-amber-500/60 text-amber-200 shadow-md ring-1 ring-amber-500/40'
-                              : 'bg-meyhane-bg/70 border-emerald-500/30 text-gray-300 hover:border-emerald-500/70 hover:bg-emerald-950/20'
-                          }`}
-                          title="Masa ve misafir detayları için tıklayın"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-white text-xs group-hover:text-gold transition-colors">
-                              {tbl.number}
-                            </span>
-                            <span className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
+                        return (
+                          <button
+                            type="button"
+                            key={tbl.id}
+                            onClick={() => setSelectedFloorTable(tbl)}
+                            className={`p-3.5 rounded-2xl border text-left space-y-1 transition-all w-full cursor-pointer hover:scale-[1.03] active:scale-95 group ${
                               isSeated
-                                ? 'bg-blue-500/30 text-blue-200'
+                                ? 'bg-blue-950/40 border-blue-500/60 text-blue-200 shadow-md ring-1 ring-blue-500/40'
                                 : isOccupied
-                                ? 'bg-amber-500/30 text-amber-200'
-                                : 'bg-emerald-500/20 text-emerald-300'
-                            }`}>
-                              {isSeated ? 'Masada' : isOccupied ? 'Dolu' : 'Boş'}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-meyhane-muted">
-                            Kapasite: {tbl.capacity} Kişi
-                          </div>
-                          {matchedRes ? (
-                            <div className="text-[11px] font-semibold text-white pt-1 border-t border-white/10 truncate flex items-center justify-between">
-                              <span className="truncate">{matchedRes.fullName}</span>
-                              <span className="text-[10px] text-gold font-mono ml-1">{matchedRes.time}</span>
+                                ? 'bg-amber-950/30 border-amber-500/60 text-amber-200 shadow-md ring-1 ring-amber-500/40'
+                                : 'bg-meyhane-bg/70 border-emerald-500/30 text-gray-300 hover:border-emerald-500/70 hover:bg-emerald-950/20'
+                            }`}
+                            title="Masa ve misafir detayları için tıklayın"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-white text-xs group-hover:text-gold transition-colors">
+                                {tbl.number}
+                              </span>
+                              <span className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${
+                                isSeated
+                                  ? 'bg-blue-500/30 text-blue-200'
+                                  : isOccupied
+                                  ? 'bg-amber-500/30 text-amber-200'
+                                  : 'bg-emerald-500/20 text-emerald-300'
+                              }`}>
+                                {isSeated ? 'Masada' : isOccupied ? 'Dolu' : 'Boş'}
+                              </span>
                             </div>
-                          ) : (
-                            <div className="text-[10px] text-emerald-400 pt-1 border-t border-emerald-500/20 flex items-center justify-between">
-                              <span>✓ Boş / Müsait</span>
-                              <span className="text-[9px] text-gray-500 group-hover:text-gold">İncele &gt;</span>
+                            <div className="text-[10px] text-meyhane-muted">
+                              Kapasite: {tbl.capacity} Kişi
                             </div>
-                          )}
-                        </button>
-                      );
-                    })}
+                            {matchedRes ? (
+                              <div className="text-[11px] font-semibold text-white pt-1 border-t border-white/10 truncate flex items-center justify-between">
+                                <span className="truncate">{matchedRes.fullName}</span>
+                                <span className="text-[10px] text-gold font-mono ml-1">{matchedRes.time}</span>
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-emerald-400 pt-1 border-t border-emerald-500/20 flex items-center justify-between">
+                                <span>✓ Boş / Müsait</span>
+                                <span className="text-[9px] text-gray-500 group-hover:text-gold">İncele &gt;</span>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -1383,6 +1988,147 @@ export default function AdminPage() {
               Parolayı Güncelle
             </button>
           </form>
+
+          {/* User Management Section */}
+          <div className="pt-6 border-t border-meyhane-border space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold font-serif text-white flex items-center gap-2">
+                  <Users className="w-4 h-4 text-gold" />
+                  Kullanıcı Yönetimi
+                </h3>
+                <p className="text-[11px] text-gray-400 mt-1">Yönetici ve host hesaplarını yönetin.</p>
+              </div>
+            </div>
+
+            {userMsg && (
+              <div className="p-3 rounded-xl bg-gold/10 border border-gold/30 text-gold text-xs animate-fadeIn">
+                {userMsg}
+              </div>
+            )}
+
+            {/* Admins List */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-gold" />
+                  Yöneticiler
+                </h4>
+                <button
+                  onClick={() => { setShowAddUserModal('admin'); setNewUserForm({ username: '', password: '', displayName: '', name: '', pin: '', permissions: ['reservations'] }); }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gold/10 hover:bg-gold/20 text-gold text-[11px] font-semibold border border-gold/30 transition-colors"
+                >
+                  <Plus className="w-3 h-3" /> Yönetici Ekle
+                </button>
+              </div>
+              <div className="space-y-2">
+                {userAdmins.map((admin: any) => (
+                  <div key={admin.id} className="flex items-center justify-between p-3 rounded-xl bg-meyhane-bg border border-meyhane-border hover:border-gold/30 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${admin.role === 'founder' ? 'bg-gold/20 text-gold border border-gold/40' : 'bg-white/10 text-white border border-meyhane-border'}`}>
+                        {admin.role === 'founder' ? <Crown className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-white flex items-center gap-2">
+                          {admin.displayName}
+                          {admin.role === 'founder' && <span className="px-1.5 py-0.5 rounded-full bg-gold/15 text-gold text-[9px] font-bold uppercase">Kurucu</span>}
+                        </div>
+                        <div className="text-[10px] text-meyhane-muted">@{admin.username}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-400">{(admin.permissions || []).length} yetki</span>
+                      {admin.role !== 'founder' && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`${admin.displayName} silinsin mi?`)) return;
+                            const res = await fetch(`/api/admin/users?type=admin&id=${admin.id}`, { method: 'DELETE' });
+                            const json = await res.json();
+                            if (json.success) {
+                              setUserAdmins(prev => prev.filter((a: any) => a.id !== admin.id));
+                              setUserMsg('Yönetici silindi.');
+                              setTimeout(() => setUserMsg(''), 3000);
+                            }
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {userAdmins.length === 0 && <p className="text-xs text-meyhane-muted italic">Henüz yönetici eklenmemiş.</p>}
+              </div>
+            </div>
+
+            {/* Hosts List */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5 text-gold" />
+                  Host Kullanıcıları
+                </h4>
+                <button
+                  onClick={() => { setShowAddUserModal('host'); setNewUserForm({ username: '', password: '', displayName: '', name: '', pin: '', permissions: [] }); }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gold/10 hover:bg-gold/20 text-gold text-[11px] font-semibold border border-gold/30 transition-colors"
+                >
+                  <Plus className="w-3 h-3" /> Host Ekle
+                </button>
+              </div>
+              <div className="space-y-2">
+                {userHosts.map((host: any) => (
+                  <div key={host.id} className="flex items-center justify-between p-3 rounded-xl bg-meyhane-bg border border-meyhane-border hover:border-gold/30 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center justify-center">
+                        <UserCheck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-white">{host.name}</div>
+                        <div className="text-[10px] text-meyhane-muted">PIN: {'•'.repeat(host.pinLength || 4)} · {host.active !== false ? 'Aktif' : 'Pasif'}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          const newActive = host.active === false ? true : false;
+                          const res = await fetch('/api/admin/users', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ type: 'host', id: host.id, active: newActive }),
+                          });
+                          const json = await res.json();
+                          if (json.success) {
+                            setUserHosts(prev => prev.map((h: any) => h.id === host.id ? { ...h, active: newActive } : h));
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors ${host.active !== false ? 'bg-emerald-500/15 text-emerald-400 hover:bg-red-500/15 hover:text-red-400' : 'bg-red-500/15 text-red-400 hover:bg-emerald-500/15 hover:text-emerald-400'}`}
+                      >
+                        {host.active !== false ? 'Pasife Al' : 'Aktife Al'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`${host.name} silinsin mi?`)) return;
+                          const res = await fetch(`/api/admin/users?type=host&id=${host.id}`, { method: 'DELETE' });
+                          const json = await res.json();
+                          if (json.success) {
+                            setUserHosts(prev => prev.filter((h: any) => h.id !== host.id));
+                            setUserMsg('Host silindi.');
+                            setTimeout(() => setUserMsg(''), 3000);
+                          }
+                        }}
+                        className="p-1.5 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {userHosts.length === 0 && <p className="text-xs text-meyhane-muted italic">Henüz host eklenmemiş.</p>}
+              </div>
+            </div>
+          </div>
+
         </div>
       )}
 
@@ -1702,8 +2448,24 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-gray-300 font-semibold">Masa Seçimi</label>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-gray-300 font-semibold text-xs">Masa Seçimi</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFloorDate(newRes.date);
+                      setActiveTab('floor');
+                      setFloorViewMode('canvas');
+                      setShowAddResModal(false);
+                    }}
+                    className="text-gold hover:text-white text-xs font-semibold flex items-center gap-1 hover:underline transition-colors"
+                    title="2D Mimari krokiden tıklayarak masa seçin"
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>🗺️ Krokiden Masa Seç</span>
+                  </button>
+                </div>
                 <select
                   value={newRes.tableId}
                   onChange={(e) => {
@@ -1714,14 +2476,54 @@ export default function AdminPage() {
                       sectionId: t?.sectionId || 'salon'
                     });
                   }}
-                  className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none cursor-pointer"
+                  className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none cursor-pointer text-xs"
                 >
-                  {tablesList.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.number} ({t.capacity} Kişi - {t.sectionId})
-                    </option>
-                  ))}
+                  {tablesList.map(t => {
+                    const isOccupied = reservations.some(
+                      r => r.date === newRes.date &&
+                           r.status !== 'cancelled' &&
+                           (r.tableId === t.id || r.tableId?.includes(t.id))
+                    );
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {t.number} ({t.capacity} Kişi - {t.sectionId}) {isOccupied ? '⚠️ [Seçili Tarihte Dolu]' : '✓ [Boş / Müsait]'}
+                      </option>
+                    );
+                  })}
                 </select>
+                <p className="text-[10px] text-gray-400">
+                  Dilerseniz &ldquo;🗺️ Krokiden Masa Seç&rdquo; butonuna basarak doğrudan kroki üzerinden istediğiniz masaya tıklayıp rezervasyon alabilirsiniz.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-gray-300 font-semibold text-xs flex items-center justify-between">
+                  <span>🍽️ Menü Paketi Tercihi *</span>
+                  <span className="text-[10px] text-gold font-normal">Fiks / A La Carte</span>
+                </label>
+                <select
+                  value={newRes.packageId || 'premium_fix'}
+                  onChange={(e) => setNewRes({ ...newRes, packageId: e.target.value as any })}
+                  className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none cursor-pointer text-xs"
+                >
+                  <option value="premium_fix">HayalMest Gurme &amp; Rakı Menüsü (Premium Fiks)</option>
+                  <option value="standart_fix">Klasik Meyhane Fiks Menüsü</option>
+                  <option value="alacarte">A La Carte (Serbest Menü Seçimi)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-gray-300 font-semibold text-xs flex items-center justify-between">
+                  <span>📝 Özel İstekler / Açıklama Notu</span>
+                  <span className="text-[10px] text-gray-500 font-normal">Opsiyonel</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={newRes.specialRequests || ''}
+                  onChange={(e) => setNewRes({ ...newRes, specialRequests: e.target.value })}
+                  placeholder="Örn: Doğum günü pastası, sahneye yakın masa, pencere kenarı, fındık alerjisi..."
+                  className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none placeholder-gray-600 resize-none text-xs"
+                />
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-3">
@@ -1748,6 +2550,7 @@ export default function AdminPage() {
       {selectedReservationModal && (
         <ReservationDetailModal
           reservation={selectedReservationModal}
+          tables={tablesList}
           onClose={() => setSelectedReservationModal(null)}
           onStatusChange={handleStatusChange}
           onTableChange={handleTableChange}
@@ -1997,6 +2800,594 @@ export default function AdminPage() {
           </div>
         );
       })()}
+
+      {/* CUSTOMER HISTORY & PROFILE MODAL */}
+      {selectedCustomerModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md p-4 flex items-center justify-center animate-fadeIn">
+          <div className="luxury-card max-w-2xl w-full rounded-3xl p-6 sm:p-8 border border-gold/40 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+            
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-meyhane-border/70 pb-4">
+              <div className="flex items-center gap-3.5">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-base shadow-md font-serif ${
+                  selectedCustomerModal.isVip
+                    ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-black ring-2 ring-gold/60'
+                    : 'bg-white/10 text-white border border-white/15'
+                }`}>
+                  {selectedCustomerModal.fullName.split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-serif text-xl sm:text-2xl font-bold text-white">
+                      {selectedCustomerModal.fullName}
+                    </h2>
+                    {selectedCustomerModal.isVip && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-bold flex items-center gap-1">
+                        <Crown className="w-3 h-3" />
+                        VIP Müdavim
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-400 font-mono mt-0.5">
+                    {selectedCustomerModal.phone} {selectedCustomerModal.email && `• ${selectedCustomerModal.email}`}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedCustomerModal(null)}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Summary KPI Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-meyhane-bg/70 border border-meyhane-border space-y-0.5">
+                <span className="text-meyhane-muted block text-[10px] uppercase">Toplam Rezervasyon</span>
+                <span className="text-white font-bold font-serif text-base">{selectedCustomerModal.totalReservations} Adet</span>
+                <span className="text-[10px] text-gray-400 block">{selectedCustomerModal.confirmedCount + selectedCustomerModal.seatedCount} Başarılı • {selectedCustomerModal.cancelledCount} İptal</span>
+              </div>
+              <div className="p-3 rounded-xl bg-meyhane-bg/70 border border-meyhane-border space-y-0.5">
+                <span className="text-meyhane-muted block text-[10px] uppercase">Getirilen Misafir</span>
+                <span className="text-gold font-bold font-serif text-base">{selectedCustomerModal.totalGuests} Kişi</span>
+                <span className="text-[10px] text-gray-400 block">Ort. {Math.round(selectedCustomerModal.totalGuests / (selectedCustomerModal.totalReservations || 1))} kişi / rez</span>
+              </div>
+              <div className="p-3 rounded-xl bg-meyhane-bg/70 border border-meyhane-border space-y-0.5">
+                <span className="text-meyhane-muted block text-[10px] uppercase">Favori Alan</span>
+                <span className="text-emerald-400 font-bold text-sm truncate block">{selectedCustomerModal.favoriteSection}</span>
+                <span className="text-[10px] text-gray-400 block">Masa: {selectedCustomerModal.favoriteTable ? formatTableDisplay(selectedCustomerModal.favoriteTable, undefined, tablesList) : '-'}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-meyhane-bg/70 border border-meyhane-border space-y-0.5">
+                <span className="text-meyhane-muted block text-[10px] uppercase">Son Ziyaret</span>
+                <span className="text-blue-400 font-bold text-sm block">{selectedCustomerModal.lastVisit || '-'}</span>
+                <span className="text-[10px] text-gray-400 block">İlk: {selectedCustomerModal.firstVisit || '-'}</span>
+              </div>
+            </div>
+
+            {/* Notes & Allergies if exists */}
+            {(selectedCustomerModal.adminNotes || selectedCustomerModal.allergyNotes) && (
+              <div className="p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/30 text-xs space-y-2">
+                {selectedCustomerModal.adminNotes && (
+                  <div className="flex items-start gap-2 text-amber-200">
+                    <span className="text-gold font-bold">📌 Yönetici Notu:</span>
+                    <span>{selectedCustomerModal.adminNotes}</span>
+                  </div>
+                )}
+                {selectedCustomerModal.allergyNotes && (
+                  <div className="flex items-start gap-2 text-red-300">
+                    <span className="font-bold">⚠️ Alerji / Hassasiyet:</span>
+                    <span>{selectedCustomerModal.allergyNotes}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Reservation History List */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-gold" />
+                  Tüm Rezervasyon Geçmişi ({selectedCustomerModal.reservations.length})
+                </span>
+                <span className="text-gray-400 text-[11px]">En yeniden eskiye sıralı</span>
+              </div>
+
+              <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                {selectedCustomerModal.reservations.length === 0 ? (
+                  <div className="p-4 rounded-xl bg-meyhane-bg text-center text-gray-400 text-xs">
+                    Kayıtlı rezervasyon bulunamadı.
+                  </div>
+                ) : (
+                  selectedCustomerModal.reservations.map((res) => {
+                    const statusBadge = 
+                      res.status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' :
+                      res.status === 'seated' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' :
+                      res.status === 'cancelled' ? 'bg-red-500/20 text-red-300 border-red-500/30' :
+                      'bg-amber-500/20 text-amber-300 border-amber-500/30';
+                    const statusText =
+                      res.status === 'confirmed' ? 'Onaylandı' :
+                      res.status === 'seated' ? 'Masada' :
+                      res.status === 'cancelled' ? 'İptal' : 'Beklemede';
+
+                    return (
+                      <div
+                        key={res.id}
+                        className="p-3 rounded-xl bg-meyhane-bg/90 border border-meyhane-border hover:border-gold/40 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-gold font-bold">#{res.pnr}</span>
+                            <span className="text-white font-semibold flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-gray-400" />
+                              {res.date} • {res.time}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusBadge}`}>
+                              {statusText}
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] text-gray-400 flex items-center gap-2 flex-wrap">
+                            <span>Masa: <strong className="text-gray-200">{formatTableDisplay(res.tableId, res.sectionId, tablesList)}</strong> ({res.sectionId})</span>
+                            <span>•</span>
+                            <span>{res.guestCount} Kişi</span>
+                            <span>•</span>
+                            <span>{res.occasion}</span>
+                          </div>
+
+                          {res.specialRequests && (
+                            <div className="text-[11px] text-amber-200/80 italic">
+                              Not: &quot;{res.specialRequests}&quot;
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedReservationModal(res);
+                              setSelectedCustomerModal(null);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-gold/20 text-gray-300 hover:text-gold border border-white/10 text-[11px] flex items-center gap-1 transition-colors"
+                            title="Rezervasyon detay kartını ve durum değiştirme penceresini aç"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>Detay</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Action Footer */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-meyhane-border/70 text-xs">
+              <div className="flex items-center gap-2">
+                <a
+                  href={getWhatsAppUrl(selectedCustomerModal.phone, selectedCustomerModal.fullName)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-2 rounded-xl bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 hover:text-white border border-emerald-500/40 font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span>WhatsApp</span>
+                </a>
+                <a
+                  href={`tel:${selectedCustomerModal.phone.replace(/\s+/g, '')}`}
+                  className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-gold border border-white/10 font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  <span>Ara</span>
+                </a>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cust = selectedCustomerModal;
+                    setSelectedCustomerModal(null);
+                    setEditingCustomerNote(cust);
+                    setCustomerNoteForm({
+                      isVip: cust.isVip,
+                      adminNotes: cust.adminNotes,
+                      allergyNotes: cust.allergyNotes,
+                      tags: cust.tags.filter(t => !t.includes('VIP') && !t.includes('Misafir') && !t.includes('Grup') && !t.includes('İptal')).join(', '),
+                    });
+                  }}
+                  className="px-3 py-2 rounded-xl bg-white/5 hover:bg-gold/20 text-gray-300 hover:text-gold border border-white/10 font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Notu Düzenle</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cust = selectedCustomerModal;
+                    setSelectedCustomerModal(null);
+                    handleQuickBookForCustomer(cust);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-gold text-black font-bold uppercase tracking-wider hover:brightness-110 flex items-center gap-1.5 shadow-md"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Hızlı Rezervasyon Aç</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* EDIT CUSTOMER NOTE & VIP MODAL */}
+      {editingCustomerNote && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md p-4 flex items-center justify-center animate-fadeIn">
+          <div className="luxury-card max-w-lg w-full rounded-3xl p-6 sm:p-8 border border-gold/40 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-meyhane-border/70 pb-3">
+              <div>
+                <h2 className="text-base font-bold font-serif text-white flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-gold" />
+                  <span>Misafir Notu &amp; VIP Düzenleme</span>
+                </h2>
+                <p className="text-xs text-gold font-medium mt-0.5">
+                  {editingCustomerNote.fullName} ({editingCustomerNote.phone})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingCustomerNote(null)}
+                className="text-gray-400 hover:text-white p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCustomerNotes} className="space-y-4 text-xs">
+              
+              {/* VIP Toggle Checkbox */}
+              <label className="flex items-center gap-3 p-3.5 rounded-2xl bg-amber-950/20 border border-amber-500/40 cursor-pointer hover:bg-amber-950/30 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={customerNoteForm.isVip}
+                  onChange={(e) => setCustomerNoteForm({ ...customerNoteForm, isVip: e.target.checked })}
+                  className="w-4 h-4 rounded text-gold focus:ring-gold bg-meyhane-bg border-gray-600 cursor-pointer"
+                />
+                <div>
+                  <span className="text-white font-bold text-xs block">VIP &amp; Müdavim Misafir</span>
+                  <span className="text-[11px] text-gray-400 block">
+                    İşaretlendiğinde portföyde ve rezervasyonlarda altın VIP tacı ile öncelikli gösterilir.
+                  </span>
+                </div>
+              </label>
+
+              {/* Admin Private Notes */}
+              <div className="space-y-1.5">
+                <label className="text-gray-300 font-semibold block flex items-center justify-between">
+                  <span>📌 Yönetici Özel Notu</span>
+                  <span className="text-[10px] text-gray-500 font-normal">Sadece adminler görür</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={customerNoteForm.adminNotes}
+                  onChange={(e) => setCustomerNoteForm({ ...customerNoteForm, adminNotes: e.target.value })}
+                  placeholder="Örn: Sanatçı yakını, sahne önü masaları tercih eder, bahşiş konusunda cömert..."
+                  className="w-full bg-meyhane-bg border border-meyhane-border p-3 rounded-xl text-white focus:border-gold focus:outline-none placeholder-gray-600 resize-none text-xs"
+                />
+              </div>
+
+              {/* Allergy & Dietary Notes */}
+              <div className="space-y-1.5">
+                <label className="text-gray-300 font-semibold block flex items-center justify-between">
+                  <span>⚠️ Alerji / Hassasiyet / Tercihler</span>
+                  <span className="text-[10px] text-red-400/80 font-normal">Mutfak &amp; Servis Uyarısı</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={customerNoteForm.allergyNotes}
+                  onChange={(e) => setCustomerNoteForm({ ...customerNoteForm, allergyNotes: e.target.value })}
+                  placeholder="Örn: Kabuklu deniz ürünleri alerjisi var, etler az pişmiş olmalı..."
+                  className="w-full bg-meyhane-bg border border-meyhane-border p-3 rounded-xl text-white focus:border-gold focus:outline-none placeholder-gray-600 resize-none text-xs"
+                />
+              </div>
+
+              {/* Custom Tags */}
+              <div className="space-y-1.5">
+                <label className="text-gray-300 font-semibold block flex items-center justify-between">
+                  <span>🏷️ Özel Etiketler (Virgülle ayırın)</span>
+                  <span className="text-[10px] text-gray-500 font-normal">Filtreleme ve arama için</span>
+                </label>
+                <input
+                  type="text"
+                  value={customerNoteForm.tags}
+                  onChange={(e) => setCustomerNoteForm({ ...customerNoteForm, tags: e.target.value })}
+                  placeholder="Şirket Yemeği, Sanatçı Dostu, Doğum Günü, Gurme"
+                  className="w-full bg-meyhane-bg border border-meyhane-border p-3 rounded-xl text-white focus:border-gold focus:outline-none placeholder-gray-600 text-xs"
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="pt-2 flex items-center justify-end gap-3 border-t border-meyhane-border/70">
+                <button
+                  type="button"
+                  onClick={() => setEditingCustomerNote(null)}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold transition-colors"
+                >
+                  İptal
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-gold text-black font-bold uppercase tracking-wider hover:brightness-110 shadow-lg text-xs"
+                >
+                  Değişiklikleri Kaydet
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING ACTION DRAWER (Açılır Çekmece - Varlık Ekle Tarzı) */}
+      {showHamburgerMenu && (
+        <>
+          {/* Subtle click-away backdrop */}
+          <div
+            onClick={() => setShowHamburgerMenu(false)}
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] animate-fadeIn"
+          />
+
+          {/* Floating Luxury Card Drawer pinned near top-right header */}
+          <div className="fixed top-16 sm:top-20 right-3 sm:right-6 z-50 w-80 sm:w-88 luxury-card rounded-3xl p-5 border-2 border-gold/60 shadow-2xl backdrop-blur-2xl animate-fadeIn space-y-4 max-h-[85vh] overflow-y-auto">
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between border-b border-meyhane-border/70 pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-gold" />
+                <span className="text-xs font-bold uppercase tracking-wider text-gold font-serif">Hızlı Yönetim Menüsü</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHamburgerMenu(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+                title="Kapat"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Actions List */}
+            <div className="space-y-2 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHamburgerMenu(false);
+                  setShowAddResModal(true);
+                }}
+                className="w-full p-3 rounded-xl bg-gold text-black font-bold flex items-center gap-2.5 shadow-md hover:brightness-110 transition-all text-xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Telefonla Rezervasyon Aç</span>
+              </button>
+
+              <Link
+                href="/host"
+                onClick={() => setShowHamburgerMenu(false)}
+                className="w-full p-2.5 rounded-xl bg-meyhane-surface hover:bg-gold/15 border border-gold/40 text-gold font-semibold flex items-center gap-2.5 transition-colors"
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>Host Masası (Kapı Masa Bulucu)</span>
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => {
+                  fetchAllData();
+                  setShowHamburgerMenu(false);
+                }}
+                className="w-full p-2.5 rounded-xl bg-meyhane-surface hover:bg-white/10 border border-meyhane-border text-gray-200 flex items-center gap-2.5 transition-colors"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-gold' : ''}`} />
+                <span>Tüm Verileri Yenile</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStats(!showStats);
+                  setShowHamburgerMenu(false);
+                }}
+                className="w-full p-2.5 rounded-xl bg-meyhane-surface hover:bg-white/10 border border-meyhane-border text-gray-200 flex items-center justify-between transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <BarChart2 className="w-4 h-4 text-gold" />
+                  <span>KPI &amp; İstatistik Şeridi</span>
+                </div>
+                <span className="text-[10px] text-gold font-bold bg-gold/15 px-2 py-0.5 rounded">{showStats ? 'Açık' : 'Gizli'}</span>
+              </button>
+
+              <Link
+                href="/"
+                target="_blank"
+                className="w-full p-2.5 rounded-xl bg-meyhane-surface hover:bg-white/10 border border-meyhane-border text-gray-300 flex items-center justify-between transition-colors"
+              >
+                <div className="flex items-center gap-2.5">
+                  <ExternalLink className="w-4 h-4 text-gray-400" />
+                  <span>Canlı Siteyi Aç</span>
+                </div>
+                <span className="text-[10px] text-gray-500">↗</span>
+              </Link>
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="pt-3 border-t border-meyhane-border/70">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full p-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-300 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Güvenli Çıkış Yap</span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ADD USER MODAL */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm p-4 flex items-center justify-center animate-fadeIn">
+          <div className="luxury-card max-w-md w-full rounded-3xl p-6 sm:p-8 border border-gold/40 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-meyhane-border pb-3">
+              <h2 className="text-base font-bold font-serif text-white flex items-center gap-2">
+                {showAddUserModal === 'admin' ? <ShieldCheck className="w-4 h-4 text-gold" /> : <UserCheck className="w-4 h-4 text-gold" />}
+                {showAddUserModal === 'admin' ? 'Yeni Yönetici Ekle' : 'Yeni Host Ekle'}
+              </h2>
+              <button onClick={() => setShowAddUserModal(null)} className="text-gray-400 hover:text-white">✕</button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const body = showAddUserModal === 'admin'
+                    ? { type: 'admin', username: newUserForm.username, password: newUserForm.password, displayName: newUserForm.displayName, permissions: newUserForm.permissions, createdBy: 'admin' }
+                    : { type: 'host', name: newUserForm.name, pin: newUserForm.pin, createdBy: 'admin' };
+                  const res = await fetch('/api/admin/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                  });
+                  const json = await res.json();
+                  if (json.success) {
+                    // Re-fetch users
+                    const usersRes = await fetch('/api/admin/users').then(r => r.json()).catch(() => ({}));
+                    if (usersRes?.success) {
+                      setUserAdmins(usersRes.admins || []);
+                      setUserHosts(usersRes.hosts || []);
+                    }
+                    setShowAddUserModal(null);
+                    setUserMsg(showAddUserModal === 'admin' ? 'Yönetici başarıyla eklendi.' : 'Host başarıyla eklendi.');
+                    setTimeout(() => setUserMsg(''), 3000);
+                  } else {
+                    alert(json.error || 'Hata oluştu.');
+                  }
+                } catch {
+                  alert('Bağlantı hatası.');
+                }
+              }}
+              className="space-y-4 text-xs"
+            >
+              {showAddUserModal === 'admin' ? (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-gray-300 font-semibold uppercase tracking-wider">Görünen Ad *</label>
+                    <input
+                      type="text" required value={newUserForm.displayName}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, displayName: e.target.value })}
+                      placeholder="Örn: Müdür Mehmet"
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-gray-300 font-semibold uppercase tracking-wider">Kullanıcı Adı *</label>
+                    <input
+                      type="text" required value={newUserForm.username}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, username: e.target.value })}
+                      placeholder="Örn: mehmet"
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-gray-300 font-semibold uppercase tracking-wider">Şifre *</label>
+                    <input
+                      type="password" required value={newUserForm.password}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
+                      placeholder="En az 4 karakter"
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-gray-300 font-semibold uppercase tracking-wider">Yetkiler</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { key: 'reservations', label: 'Rezervasyonlar' },
+                        { key: 'customers', label: 'Misafirler' },
+                        { key: 'floor', label: 'Kuşbakışı' },
+                        { key: 'designer', label: 'Salon Tasarımcısı' },
+                        { key: 'events', label: 'Etkinlikler' },
+                        { key: 'menu', label: 'Menü' },
+                        { key: 'content', label: 'İçerik' },
+                        { key: 'settings', label: 'Ayarlar' },
+                      ].map(perm => (
+                        <label key={perm.key} className="flex items-center gap-2 p-2 rounded-lg bg-meyhane-bg border border-meyhane-border cursor-pointer hover:border-gold/30 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={newUserForm.permissions.includes(perm.key)}
+                            onChange={(e) => {
+                              const perms = e.target.checked
+                                ? [...newUserForm.permissions, perm.key]
+                                : newUserForm.permissions.filter(p => p !== perm.key);
+                              setNewUserForm({ ...newUserForm, permissions: perms });
+                            }}
+                            className="accent-gold"
+                          />
+                          <span className="text-gray-300">{perm.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-gray-300 font-semibold uppercase tracking-wider">Host Adı *</label>
+                    <input
+                      type="text" required value={newUserForm.name}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, name: e.target.value })}
+                      placeholder="Örn: Ahmet"
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-gray-300 font-semibold uppercase tracking-wider">PIN Kodu * (4-6 Haneli)</label>
+                    <input
+                      type="text" required maxLength={6} value={newUserForm.pin}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, pin: e.target.value.replace(/\D/g, '') })}
+                      placeholder="Örn: 1234"
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none text-center tracking-[0.5em] text-lg font-mono"
+                    />
+                    <p className="text-[10px] text-meyhane-muted">Host bu PIN ile giriş yapacaktır.</p>
+                  </div>
+                </>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddUserModal(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-meyhane-border transition-colors"
+                >
+                  İptal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-gold-500 via-gold to-gold-600 text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 shadow-lg shadow-gold/25 transition-all"
+                >
+                  {showAddUserModal === 'admin' ? 'Yönetici Ekle' : 'Host Ekle'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

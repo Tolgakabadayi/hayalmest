@@ -9,8 +9,8 @@
       "v-2"
     ],
     "mergedCapacity": 8,
-    "posX": 18,
-    "posY": 23
+    "posX": 5,
+    "posY": 21
   },
   {
     "id": "v-2",
@@ -22,8 +22,8 @@
       "v-1"
     ],
     "mergedCapacity": 8,
-    "posX": 31,
-    "posY": 23
+    "posX": 5,
+    "posY": 33
   },
   {
     "id": "v-3",
@@ -35,8 +35,8 @@
       "v-4"
     ],
     "mergedCapacity": 12,
-    "posX": 44,
-    "posY": 23
+    "posX": 5,
+    "posY": 45
   },
   {
     "id": "v-4",
@@ -48,12 +48,12 @@
       "v-3"
     ],
     "mergedCapacity": 12,
-    "posX": 57,
-    "posY": 23
+    "posX": 5,
+    "posY": 57
   },
   {
     "id": "s-1",
-    "number": "Masa 11",
+    "number": "3",
     "sectionId": "salon",
     "capacity": 2,
     "minGuests": 1,
@@ -61,12 +61,12 @@
       "s-2"
     ],
     "mergedCapacity": 6,
-    "posX": 18,
-    "posY": 34
+    "posX": 29,
+    "posY": 27
   },
   {
     "id": "s-2",
-    "number": "Masa 12",
+    "number": "1",
     "sectionId": "salon",
     "capacity": 4,
     "minGuests": 2,
@@ -75,12 +75,14 @@
       "s-3"
     ],
     "mergedCapacity": 8,
-    "posX": 36,
-    "posY": 48
+    "posX": 29,
+    "posY": 15,
+    "width": 6,
+    "height": 6
   },
   {
     "id": "s-3",
-    "number": "Masa 14",
+    "number": "4",
     "sectionId": "salon",
     "capacity": 4,
     "minGuests": 2,
@@ -88,12 +90,12 @@
       "s-2"
     ],
     "mergedCapacity": 8,
-    "posX": 52,
-    "posY": 48
+    "posX": 29,
+    "posY": 33
   },
   {
     "id": "s-4",
-    "number": "Masa 15",
+    "number": "5",
     "sectionId": "salon",
     "capacity": 6,
     "minGuests": 3,
@@ -101,12 +103,12 @@
       "s-5"
     ],
     "mergedCapacity": 12,
-    "posX": 68,
-    "posY": 48
+    "posX": 29,
+    "posY": 39
   },
   {
     "id": "s-5",
-    "number": "Masa 16",
+    "number": "6",
     "sectionId": "salon",
     "capacity": 6,
     "minGuests": 4,
@@ -114,19 +116,21 @@
       "s-4"
     ],
     "mergedCapacity": 12,
-    "posX": 84,
-    "posY": 48
+    "posX": 29,
+    "posY": 45
   },
   {
     "id": "s-6",
-    "number": "Masa 18 (Grup)",
+    "number": "2",
     "sectionId": "salon",
     "capacity": 12,
     "minGuests": 6,
     "adjacentWith": [],
     "mergedCapacity": 12,
-    "posX": 50,
-    "posY": 64
+    "posX": 29,
+    "posY": 21,
+    "width": 6,
+    "height": 6
   },
   {
     "id": "b-1",
@@ -138,8 +142,8 @@
       "b-2"
     ],
     "mergedCapacity": 6,
-    "posX": 64,
-    "posY": 82
+    "posX": 93,
+    "posY": 7
   },
   {
     "id": "b-2",
@@ -151,8 +155,8 @@
       "b-1"
     ],
     "mergedCapacity": 6,
-    "posX": 74,
-    "posY": 82
+    "posX": 93,
+    "posY": 16
   },
   {
     "id": "b-3",
@@ -164,8 +168,8 @@
       "b-4"
     ],
     "mergedCapacity": 12,
-    "posX": 84,
-    "posY": 82
+    "posX": 93,
+    "posY": 25
   },
   {
     "id": "b-4",
@@ -177,8 +181,8 @@
       "b-3"
     ],
     "mergedCapacity": 12,
-    "posX": 94,
-    "posY": 82
+    "posX": 85,
+    "posY": 7
   },
   {
     "id": "l-1",
@@ -190,20 +194,549 @@
       "l-2"
     ],
     "mergedCapacity": 24,
-    "posX": 39,
-    "posY": 70
+    "posX": 41,
+    "posY": 78
   },
   {
     "id": "l-2",
     "number": "Loca B (Gala Grubu)",
     "sectionId": "loca",
-    "capacity": 16,
-    "minGuests": 10,
+    "capacity": 1,
+    "minGuests": 1,
     "adjacentWith": [
       "l-1"
     ],
     "mergedCapacity": 26,
-    "posX": 73,
-    "posY": 74
+    "posX": 50,
+    "posY": 78
+  },
+  {
+    "id": "t-1790507145821",
+    "number": "VIP 17",
+    "sectionId": "vip_sahne",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 5,
+    "posY": 69
+  },
+  {
+    "id": "t-1790509316164",
+    "number": "7",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 29,
+    "posY": 51,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509383820",
+    "number": "Özel 19",
+    "sectionId": "loca",
+    "capacity": 12,
+    "minGuests": 6,
+    "adjacentWith": [],
+    "posX": 41,
+    "posY": 68,
+    "width": 8,
+    "height": 7
+  },
+  {
+    "id": "t-1790509389868",
+    "number": "Özel 20",
+    "sectionId": "loca",
+    "capacity": 12,
+    "minGuests": 6,
+    "adjacentWith": [],
+    "posX": 50,
+    "posY": 68,
+    "width": 8,
+    "height": 7
+  },
+  {
+    "id": "t-1790509416572",
+    "number": "11",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 38,
+    "posY": 27,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509418084",
+    "number": "10",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 38,
+    "posY": 21,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509419268",
+    "number": "8",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 29,
+    "posY": 57,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509420564",
+    "number": "13",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 38,
+    "posY": 39,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509422444",
+    "number": "15",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 38,
+    "posY": 51,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509423741",
+    "number": "9",
+    "sectionId": "salon",
+    "capacity": 10,
+    "minGuests": 5,
+    "adjacentWith": [],
+    "posX": 38,
+    "posY": 15,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509427308",
+    "number": "14",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 38,
+    "posY": 45,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509429692",
+    "number": "12",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 38,
+    "posY": 33,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509449012",
+    "number": "Standart 29",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 47,
+    "posY": 15,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509452076",
+    "number": "Standart 30",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [
+      "t-1790509522540",
+      "t-1790509520604"
+    ],
+    "posX": 56,
+    "posY": 15,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509454196",
+    "number": "16",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 38,
+    "posY": 57,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509455548",
+    "number": "Standart 32",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 47,
+    "posY": 57,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509458268",
+    "number": "Standart 33",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 47,
+    "posY": 51,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509459876",
+    "number": "Büyük 34",
+    "sectionId": "salon",
+    "capacity": 10,
+    "minGuests": 5,
+    "adjacentWith": [],
+    "posX": 47,
+    "posY": 39,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509461540",
+    "number": "Standart 35",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 47,
+    "posY": 45,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509463620",
+    "number": "Standart 36",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 47,
+    "posY": 27,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509465540",
+    "number": "Standart 37",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 47,
+    "posY": 21,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509466972",
+    "number": "Standart 38",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 47,
+    "posY": 33,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509513460",
+    "number": "Standart 39",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 56,
+    "posY": 57,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509515148",
+    "number": "Standart 40",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 56,
+    "posY": 51,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509516388",
+    "number": "Standart 41",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 56,
+    "posY": 33,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509517556",
+    "number": "Büyük 42",
+    "sectionId": "salon",
+    "capacity": 10,
+    "minGuests": 5,
+    "adjacentWith": [],
+    "posX": 56,
+    "posY": 45,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509518749",
+    "number": "Standart 43",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 56,
+    "posY": 39,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509520604",
+    "number": "Standart 44",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 56,
+    "posY": 27,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509522540",
+    "number": "Standart 45",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 56,
+    "posY": 21,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509536428",
+    "number": "Standart 46",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 76,
+    "posY": 7,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509537836",
+    "number": "Standart 47",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 65,
+    "posY": 33,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509539764",
+    "number": "Standart 48",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 65,
+    "posY": 27,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509542972",
+    "number": "Standart 49",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 65,
+    "posY": 39,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509544380",
+    "number": "Standart 50",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 65,
+    "posY": 21,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509545628",
+    "number": "Standart 51",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 65,
+    "posY": 15,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509562636",
+    "number": "Standart 52",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 65,
+    "posY": 57,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509564252",
+    "number": "Standart 53",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 65,
+    "posY": 51,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509566244",
+    "number": "Standart 54",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 65,
+    "posY": 45,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509578469",
+    "number": "Bahçe 55",
+    "sectionId": "bahce",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 93,
+    "posY": 61,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509579996",
+    "number": "Bahçe 56",
+    "sectionId": "bahce",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 93,
+    "posY": 52,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509581516",
+    "number": "Bahçe 57",
+    "sectionId": "bahce",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 93,
+    "posY": 43,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509583436",
+    "number": "Bahçe 58",
+    "sectionId": "bahce",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 93,
+    "posY": 34,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509599772",
+    "number": "Bahçe 59",
+    "sectionId": "bahce",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 83,
+    "posY": 30,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "t-1790509607349",
+    "number": "Bahçe 61",
+    "sectionId": "bahce",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [],
+    "posX": 83,
+    "posY": 46,
+    "width": 6,
+    "height": 6
   }
 ]

@@ -17,10 +17,13 @@ import {
   Utensils, 
   PartyPopper,
   CheckCircle2,
-  ArrowRight
+  ArrowRight,
+  Eye,
+  ChevronDown,
+  X
 } from 'lucide-react';
 import { StageEvent, STAGE_EVENTS as FALLBACK_EVENTS } from '@/data/eventsData';
-import { VENUE_SECTIONS } from '@/data/tablesData';
+import { VENUE_SECTIONS, TableSection } from '@/data/tablesData';
 import { REVIEWS_DATA } from '@/data/reviewsData';
 import { getNextEventDate } from '@/lib/dateUtils';
 
@@ -32,6 +35,7 @@ export default function HomePage() {
   });
   const [quickGuests, setQuickGuests] = useState('4');
   const [quickSection, setQuickSection] = useState('vip_sahne');
+  const [selectedSectionDetail, setSelectedSectionDetail] = useState<TableSection | null>(null);
 
   const [events, setEvents] = useState<StageEvent[]>(FALLBACK_EVENTS);
   const [siteContent, setSiteContent] = useState<any>(null);
@@ -117,7 +121,8 @@ export default function HomePage() {
                   value={quickDate}
                   min={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setQuickDate(e.target.value)}
-                  className="w-full bg-transparent text-sm text-white font-medium focus:outline-none cursor-pointer"
+                  style={{ border: 'none', outline: 'none', boxShadow: 'none' }}
+                  className="w-full bg-transparent text-sm text-white font-medium border-0 border-none outline-none ring-0 focus:ring-0 focus:outline-none cursor-pointer"
                   required
                 />
               </div>
@@ -128,17 +133,21 @@ export default function HomePage() {
                   <Users className="w-3.5 h-3.5 text-gold" />
                   Kişi Sayısı
                 </label>
-                <select
-                  value={quickGuests}
-                  onChange={(e) => setQuickGuests(e.target.value)}
-                  className="w-full bg-transparent text-sm text-white font-medium focus:outline-none cursor-pointer"
-                >
-                  <option value="2" className="bg-meyhane-card">2 Kişilik Masa</option>
-                  <option value="4" className="bg-meyhane-card">4 Kişilik Masa</option>
-                  <option value="6" className="bg-meyhane-card">6 Kişilik Masa</option>
-                  <option value="8" className="bg-meyhane-card">8 Kişilik Grup</option>
-                  <option value="12" className="bg-meyhane-card">12+ Kişilik Özel Grup</option>
-                </select>
+                <div className="relative flex items-center">
+                  <select
+                    value={quickGuests}
+                    onChange={(e) => setQuickGuests(e.target.value)}
+                    style={{ border: 'none', outline: 'none', boxShadow: 'none' }}
+                    className="w-full bg-transparent text-sm text-white font-medium border-0 border-none outline-none ring-0 focus:ring-0 focus:outline-none cursor-pointer appearance-none pr-6"
+                  >
+                    <option value="2" className="bg-[#181D28] text-white">2 Kişilik Masa</option>
+                    <option value="4" className="bg-[#181D28] text-white">4 Kişilik Masa</option>
+                    <option value="6" className="bg-[#181D28] text-white">6 Kişilik Masa</option>
+                    <option value="8" className="bg-[#181D28] text-white">8 Kişilik Grup</option>
+                    <option value="12" className="bg-[#181D28] text-white">12+ Kişilik Özel Grup</option>
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-gold/80 absolute right-0 pointer-events-none" />
+                </div>
               </div>
 
               {/* Section */}
@@ -147,16 +156,20 @@ export default function HomePage() {
                   <Wine className="w-3.5 h-3.5 text-gold" />
                   Masa / Alan
                 </label>
-                <select
-                  value={quickSection}
-                  onChange={(e) => setQuickSection(e.target.value)}
-                  className="w-full bg-transparent text-sm text-white font-medium focus:outline-none cursor-pointer"
-                >
-                  <option value="vip_sahne" className="bg-meyhane-card">Sahne Önü (VIP Fasıl)</option>
-                  <option value="salon" className="bg-meyhane-card">Orta Salon (Muhabbet)</option>
-                  <option value="bahce" className="bg-meyhane-card">Bahçe &amp; Teras (Ferah)</option>
-                  <option value="loca" className="bg-meyhane-card">Özel Loca (Kutlama)</option>
-                </select>
+                <div className="relative flex items-center">
+                  <select
+                    value={quickSection}
+                    onChange={(e) => setQuickSection(e.target.value)}
+                    style={{ border: 'none', outline: 'none', boxShadow: 'none' }}
+                    className="w-full bg-transparent text-sm text-white font-medium border-0 border-none outline-none ring-0 focus:ring-0 focus:outline-none cursor-pointer appearance-none pr-6"
+                  >
+                    <option value="vip_sahne" className="bg-[#181D28] text-white">Sahne Önü (VIP Fasıl)</option>
+                    <option value="salon" className="bg-[#181D28] text-white">Orta Salon (Muhabbet)</option>
+                    <option value="bahce" className="bg-[#181D28] text-white">Bahçe &amp; Teras (Ferah)</option>
+                    <option value="loca" className="bg-[#181D28] text-white">Özel Loca (Kutlama)</option>
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-gold/80 absolute right-0 pointer-events-none" />
+                </div>
               </div>
 
               {/* Submit Button */}
@@ -411,12 +424,23 @@ export default function HomePage() {
                   </p>
                 </div>
 
-                <Link
-                  href={`/rezervasyon?section=${section.id}`}
-                  className="w-full py-2.5 px-4 rounded-xl bg-gold/15 hover:bg-gold text-gold hover:text-black border border-gold/40 text-xs font-semibold text-center transition-all uppercase tracking-wider block"
-                >
-                  Haritada Bu Bölgeyi Gör
-                </Link>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSectionDetail(section)}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-meyhane-border text-xs font-semibold text-center transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-gold" />
+                    <span>Bölgeyi Gör</span>
+                  </button>
+                  <Link
+                    href={`/rezervasyon?section=${section.id}`}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-gold/15 hover:bg-gold text-gold hover:text-black border border-gold/40 text-xs font-semibold text-center transition-all flex items-center justify-center gap-1.5 uppercase tracking-wider"
+                  >
+                    <span>Masa Ayırt</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </div>
               </div>
             </div>
           ))}
@@ -614,6 +638,85 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* SECTION DETAIL PREVIEW MODAL */}
+      {selectedSectionDetail && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md p-4 flex items-center justify-center animate-fadeIn">
+          <div className="luxury-card max-w-xl w-full rounded-3xl overflow-hidden border border-gold/40 shadow-2xl space-y-0 relative">
+            <div className="relative h-64 sm:h-72 w-full">
+              <Image
+                src={selectedSectionDetail.image}
+                alt={selectedSectionDetail.name}
+                fill
+                className="object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-meyhane-card via-black/30 to-black/60" />
+              
+              <button
+                type="button"
+                onClick={() => setSelectedSectionDetail(null)}
+                className="absolute top-4 right-4 p-2 rounded-full bg-black/70 hover:bg-black text-white/80 hover:text-white border border-white/20 transition-all z-10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="absolute top-4 left-4 flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full bg-black/80 backdrop-blur-md text-gold text-xs font-semibold border border-gold/40">
+                  {selectedSectionDetail.badge}
+                </span>
+                <span className="px-2.5 py-1 rounded-full bg-white/20 text-white text-xs font-medium backdrop-blur-sm">
+                  {selectedSectionDetail.capacityRange}
+                </span>
+              </div>
+
+              <div className="absolute bottom-4 left-5 right-5">
+                <h3 className="text-2xl sm:text-3xl font-bold font-serif text-white">
+                  {selectedSectionDetail.name}
+                </h3>
+              </div>
+            </div>
+
+            <div className="p-6 sm:p-7 space-y-5 bg-meyhane-card">
+              <div>
+                <h4 className="text-xs uppercase tracking-wider text-gold font-semibold mb-1.5">
+                  Bölge Ambiyansı &amp; Özellikleri
+                </h4>
+                <p className="text-sm text-gray-200 leading-relaxed font-light">
+                  {selectedSectionDetail.longDesc || selectedSectionDetail.shortDesc}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-meyhane-surface/80 border border-meyhane-border/70">
+                  <div className="text-meyhane-muted text-[11px] mb-0.5">Masa Kapasitesi</div>
+                  <div className="text-white font-semibold">{selectedSectionDetail.capacityRange}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-meyhane-surface/80 border border-meyhane-border/70">
+                  <div className="text-meyhane-muted text-[11px] mb-0.5">Konum Özelliği</div>
+                  <div className="text-gold font-semibold">{selectedSectionDetail.badge}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSectionDetail(null)}
+                  className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold border border-meyhane-border transition-colors text-center"
+                >
+                  Kapat
+                </button>
+                <Link
+                  href={`/rezervasyon?section=${selectedSectionDetail.id}`}
+                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-gold-500 via-gold to-gold-600 text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 shadow-lg shadow-gold/25 transition-all text-center flex items-center justify-center gap-2"
+                >
+                  <span>Bu Bölgede Masa Ayırt</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

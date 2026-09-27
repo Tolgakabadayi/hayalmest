@@ -1,9 +1,17 @@
 'use client';
 
 import React from 'react';
+import { usePathname } from 'next/navigation';
 import { MessageCircle } from 'lucide-react';
 
 export default function WhatsAppButton() {
+  const pathname = usePathname();
+
+  // Hide on admin and host panels
+  if (pathname?.startsWith('/admin') || pathname?.startsWith('/host')) {
+    return null;
+  }
+
   return (
     <aside aria-label="Hızlı WhatsApp İletişimi" className="fixed bottom-6 right-6 z-50 flex items-center group">
       <div className="hidden md:flex mr-3 px-3 py-1.5 rounded-full bg-meyhane-surface/95 border border-gold/40 text-xs text-gold-200 shadow-xl backdrop-blur-md opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none">

@@ -2,16 +2,15 @@
 
 import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Image from 'next/image';
 import Link from 'next/link';
-import { ShieldCheck, Lock, ArrowRight, AlertCircle, ArrowLeft, UserCheck } from 'lucide-react';
+import { ShieldCheck, Lock, ArrowRight, AlertCircle, ArrowLeft, User } from 'lucide-react';
 
 function AdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTarget = searchParams.get('redirect') || '/admin';
-  const isHostRedirect = redirectTarget.includes('/host');
 
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -25,15 +24,17 @@ function AdminLoginForm() {
       const res = await fetch('/api/admin/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
 
       if (res.ok && data.success) {
         localStorage.setItem('hayalmest_admin_token', data.token);
+        if (data.displayName) localStorage.setItem('hayalmest_admin_name', data.displayName);
+        if (data.role) localStorage.setItem('hayalmest_admin_role', data.role);
         router.push(redirectTarget);
       } else {
-        setError(data.error || 'Parola hatalı, lütfen tekrar deneyin.');
+        setError(data.error || 'Giriş bilgileri hatalı, lütfen tekrar deneyin.');
       }
     } catch (err) {
       setError('Bağlantı hatası oluştu.');
@@ -48,24 +49,15 @@ function AdminLoginForm() {
       {/* Logo & Header */}
       <div className="text-center space-y-3">
         <div className="w-14 h-14 rounded-2xl bg-gold/15 border border-gold/40 text-gold mx-auto flex items-center justify-center shadow-xl">
-          {isHostRedirect ? <UserCheck className="w-7 h-7" /> : <ShieldCheck className="w-7 h-7" />}
+          <ShieldCheck className="w-7 h-7" />
         </div>
         <h1 className="text-2xl font-bold font-serif text-white">
-          {isHostRedirect ? 'Host & Karşılama Girişi' : 'HayalMest Yönetici Girişi'}
+          HayalMest Yönetici Girişi
         </h1>
         <p className="text-xs text-meyhane-muted">
-          {isHostRedirect
-            ? 'Canlı karşılama masası ve misafir kontrolü için şifre korumalı erişim'
-            : 'Rezervasyon, salon haritası, menü ve etkinlik yönetim paneli'}
+          Rezervasyon, salon haritası, menü ve etkinlik yönetim paneli
         </p>
       </div>
-
-      {isHostRedirect && (
-        <div className="p-3 rounded-xl bg-gold/10 border border-gold/30 text-gold text-xs flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 flex-shrink-0" />
-          <span>Host masasına erişebilmek için lütfen yönetici parolasını girin.</span>
-        </div>
-      )}
 
       {error && (
         <div className="p-3.5 rounded-xl bg-red-950/40 border border-red-500/50 text-red-200 text-xs flex items-center gap-2 animate-fadeIn">
@@ -77,7 +69,24 @@ function AdminLoginForm() {
       <form onSubmit={handleLogin} className="space-y-4 text-xs">
         <div className="space-y-1.5">
           <label className="text-gray-300 font-semibold uppercase tracking-wider block">
-            Yönetici Parolası
+            Kullanıcı Adı
+          </label>
+          <div className="relative">
+            <User className="w-4 h-4 text-gold absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Kullanıcı adınız"
+              className="w-full bg-meyhane-bg border border-meyhane-border pl-10 pr-4 py-3 rounded-xl text-white text-sm focus:border-gold focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-gray-300 font-semibold uppercase tracking-wider block">
+            Parola
           </label>
           <div className="relative">
             <Lock className="w-4 h-4 text-gold absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -90,9 +99,6 @@ function AdminLoginForm() {
               className="w-full bg-meyhane-bg border border-meyhane-border pl-10 pr-4 py-3 rounded-xl text-white text-sm focus:border-gold focus:outline-none"
             />
           </div>
-          <div className="text-[10px] text-meyhane-muted pt-1">
-            Varsayılan Parola: <code className="text-gold font-mono">hayalmest2026</code>
-          </div>
         </div>
 
         <button
@@ -104,7 +110,7 @@ function AdminLoginForm() {
             <span>Giriş Yapılıyor...</span>
           ) : (
             <>
-              <span>{isHostRedirect ? 'Host Masasına Giriş Yap' : 'Yönetim Paneline Giriş Yap'}</span>
+              <span>Yönetim Paneline Giriş Yap</span>
               <ArrowRight className="w-4 h-4" />
             </>
           )}

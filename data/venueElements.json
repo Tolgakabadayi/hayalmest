@@ -3,26 +3,26 @@
     "id": "stage-1",
     "type": "stage",
     "name": "CANLI FASIL & MÜZİK SAHNESİ",
-    "posX": 50,
-    "posY": 8,
-    "width": 44,
+    "posX": 47,
+    "posY": 5,
+    "width": 30,
     "height": 9
   },
   {
     "id": "bar-1",
     "type": "bar",
     "name": "Kokteyl & Rakı Barı",
-    "posX": 8,
-    "posY": 46,
-    "width": 10,
-    "height": 26
+    "posX": 46,
+    "posY": 87,
+    "width": 30,
+    "height": 5
   },
   {
     "id": "entrance-1",
     "type": "entrance",
     "name": "Ana Giriş Kapısı",
-    "posX": 50,
-    "posY": 95,
+    "posX": 19,
+    "posY": 97,
     "width": 14,
     "height": 6
   },
@@ -30,8 +30,8 @@
     "id": "exit-1",
     "type": "exit",
     "name": "Acil Çıkış Kapısı",
-    "posX": 92,
-    "posY": 94,
+    "posX": 67,
+    "posY": 96,
     "width": 12,
     "height": 6
   },
@@ -39,27 +39,100 @@
     "id": "wc-1",
     "type": "wc",
     "name": "Bay & Bayan WC",
-    "posX": 90,
-    "posY": 10,
-    "width": 12,
-    "height": 10
+    "posX": 5,
+    "posY": 88,
+    "width": 8,
+    "height": 23
   },
   {
     "id": "cashier-1",
     "type": "cashier",
     "name": "Kasa & Banko",
-    "posX": 36,
-    "posY": 90,
-    "width": 12,
+    "posX": 28,
+    "posY": 92,
+    "width": 4,
+    "height": 15
+  },
+  {
+    "id": "custom-1790507258581",
+    "type": "custom",
+    "name": "Ses Panel Yönetimi",
+    "posX": 8,
+    "posY": 9,
+    "width": 14,
+    "height": 16,
+    "color": "red"
+  },
+  {
+    "id": "column-1790509617252",
+    "type": "column",
+    "name": "Taşıyıcı Kolon / Direk",
+    "posX": 83,
+    "posY": 38,
+    "width": 6,
     "height": 6
   },
   {
-    "id": "wine-1",
-    "type": "wine",
-    "name": "Şarap Kavı",
-    "posX": 92,
-    "posY": 46,
-    "width": 10,
-    "height": 22
+    "id": "column-1790509630620",
+    "type": "column",
+    "name": "Taşıyıcı Kolon / Direk",
+    "posX": 83,
+    "posY": 54,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "column-1790509641908",
+    "type": "column",
+    "name": "Taşıyıcı Kolon / Direk",
+    "posX": 83,
+    "posY": 22,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "column-1790509647844",
+    "type": "column",
+    "name": "Taşıyıcı Kolon / Direk",
+    "posX": 5,
+    "posY": 27,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "kitchen-1790509664132",
+    "type": "kitchen",
+    "name": "Mutfak & Servis Hattı",
+    "posX": 87,
+    "posY": 82,
+    "width": 24,
+    "height": 34
+  },
+  {
+    "id": "column-1790509706860",
+    "type": "column",
+    "name": "Taşıyıcı Kolon / Direk",
+    "posX": 5,
+    "posY": 39,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "column-1790509713052",
+    "type": "column",
+    "name": "Taşıyıcı Kolon / Direk",
+    "posX": 5,
+    "posY": 51,
+    "width": 6,
+    "height": 6
+  },
+  {
+    "id": "column-1790509721476",
+    "type": "column",
+    "name": "Taşıyıcı Kolon / Direk",
+    "posX": 5,
+    "posY": 63,
+    "width": 6,
+    "height": 6
   }
 ]

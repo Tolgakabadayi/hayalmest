@@ -1,0 +1,34 @@
+{
+  "admins": [
+    {
+      "id": "admin-founder",
+      "username": "kurucu",
+      "password": "hayalmest2026",
+      "displayName": "Kurucu Yönetici",
+      "role": "founder",
+      "permissions": [
+        "reservations",
+        "customers",
+        "floor",
+        "designer",
+        "events",
+        "menu",
+        "content",
+        "settings",
+        "users"
+      ],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "createdBy": "system"
+    }
+  ],
+  "hosts": [
+    {
+      "name": "tolga",
+      "pin": "1234",
+      "active": true,
+      "createdBy": "admin",
+      "id": "host-1790516127487",
+      "createdAt": "2026-09-27T13:35:27.487Z"
+    }
+  ]
+}

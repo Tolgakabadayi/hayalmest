@@ -1,8 +1,18 @@
+'use client';
+
 import React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { MapPin, Phone, Mail, Clock, Instagram, Facebook, Youtube, CalendarCheck, UserCheck } from 'lucide-react';
 
 export default function Footer() {
+  const pathname = usePathname();
+
+  // Hide on admin and host panels
+  if (pathname?.startsWith('/admin') || pathname?.startsWith('/host')) {
+    return null;
+  }
+
   return (
     <footer className="bg-meyhane-bg border-t border-meyhane-border/70 pt-16 pb-12 text-gray-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -62,12 +72,6 @@ export default function Footer() {
                 <Link href="/rezervasyon" className="hover:text-gold transition-colors flex items-center gap-1.5 text-gold">
                   <CalendarCheck className="w-3.5 h-3.5" />
                   Online Masa Rezervasyonu
-                </Link>
-              </li>
-              <li>
-                <Link href="/host" className="hover:text-gold transition-colors flex items-center gap-1.5 text-amber-300">
-                  <UserCheck className="w-3.5 h-3.5" />
-                  Host &amp; Karşılama Masası (Masa Bulucu)
                 </Link>
               </li>
               <li>
@@ -152,7 +156,15 @@ export default function Footer() {
           <div className="flex items-center gap-6">
             <Link href="/menu" className="hover:text-gray-300">Menü & Fiyatlar</Link>
             <Link href="/rezervasyon" className="hover:text-gray-300">Rezervasyon Şartları</Link>
-            <Link href="/admin" className="text-gold/70 hover:text-gold">Personel & Yönetim Girişi</Link>
+            <div className="flex items-center gap-2 border-l border-meyhane-border/40 pl-4">
+              <Link href="/admin/login" className="text-meyhane-muted/40 hover:text-gray-400 text-[11px] transition-colors" title="Yönetici Girişi">
+                Yönetici
+              </Link>
+              <span className="text-meyhane-muted/30">·</span>
+              <Link href="/host/login" className="text-meyhane-muted/40 hover:text-gray-400 text-[11px] transition-colors" title="Host Masası Girişi">
+                Host
+              </Link>
+            </div>
           </div>
         </div>
 
