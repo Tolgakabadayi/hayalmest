@@ -1,0 +1,209 @@
+[
+  {
+    "id": "v-1",
+    "number": "VIP-1",
+    "sectionId": "vip_sahne",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [
+      "v-2"
+    ],
+    "mergedCapacity": 8,
+    "posX": 18,
+    "posY": 23
+  },
+  {
+    "id": "v-2",
+    "number": "VIP-2",
+    "sectionId": "vip_sahne",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [
+      "v-1"
+    ],
+    "mergedCapacity": 8,
+    "posX": 31,
+    "posY": 23
+  },
+  {
+    "id": "v-3",
+    "number": "VIP-3",
+    "sectionId": "vip_sahne",
+    "capacity": 6,
+    "minGuests": 3,
+    "adjacentWith": [
+      "v-4"
+    ],
+    "mergedCapacity": 12,
+    "posX": 44,
+    "posY": 23
+  },
+  {
+    "id": "v-4",
+    "number": "VIP-4",
+    "sectionId": "vip_sahne",
+    "capacity": 6,
+    "minGuests": 3,
+    "adjacentWith": [
+      "v-3"
+    ],
+    "mergedCapacity": 12,
+    "posX": 57,
+    "posY": 23
+  },
+  {
+    "id": "s-1",
+    "number": "Masa 11",
+    "sectionId": "salon",
+    "capacity": 2,
+    "minGuests": 1,
+    "adjacentWith": [
+      "s-2"
+    ],
+    "mergedCapacity": 6,
+    "posX": 18,
+    "posY": 34
+  },
+  {
+    "id": "s-2",
+    "number": "Masa 12",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [
+      "s-1",
+      "s-3"
+    ],
+    "mergedCapacity": 8,
+    "posX": 36,
+    "posY": 48
+  },
+  {
+    "id": "s-3",
+    "number": "Masa 14",
+    "sectionId": "salon",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [
+      "s-2"
+    ],
+    "mergedCapacity": 8,
+    "posX": 52,
+    "posY": 48
+  },
+  {
+    "id": "s-4",
+    "number": "Masa 15",
+    "sectionId": "salon",
+    "capacity": 6,
+    "minGuests": 3,
+    "adjacentWith": [
+      "s-5"
+    ],
+    "mergedCapacity": 12,
+    "posX": 68,
+    "posY": 48
+  },
+  {
+    "id": "s-5",
+    "number": "Masa 16",
+    "sectionId": "salon",
+    "capacity": 6,
+    "minGuests": 4,
+    "adjacentWith": [
+      "s-4"
+    ],
+    "mergedCapacity": 12,
+    "posX": 84,
+    "posY": 48
+  },
+  {
+    "id": "s-6",
+    "number": "Masa 18 (Grup)",
+    "sectionId": "salon",
+    "capacity": 12,
+    "minGuests": 6,
+    "adjacentWith": [],
+    "mergedCapacity": 12,
+    "posX": 50,
+    "posY": 64
+  },
+  {
+    "id": "b-1",
+    "number": "Bahçe 1",
+    "sectionId": "bahce",
+    "capacity": 2,
+    "minGuests": 1,
+    "adjacentWith": [
+      "b-2"
+    ],
+    "mergedCapacity": 6,
+    "posX": 64,
+    "posY": 82
+  },
+  {
+    "id": "b-2",
+    "number": "Bahçe 2",
+    "sectionId": "bahce",
+    "capacity": 4,
+    "minGuests": 2,
+    "adjacentWith": [
+      "b-1"
+    ],
+    "mergedCapacity": 6,
+    "posX": 74,
+    "posY": 82
+  },
+  {
+    "id": "b-3",
+    "number": "Bahçe 3",
+    "sectionId": "bahce",
+    "capacity": 6,
+    "minGuests": 3,
+    "adjacentWith": [
+      "b-4"
+    ],
+    "mergedCapacity": 12,
+    "posX": 84,
+    "posY": 82
+  },
+  {
+    "id": "b-4",
+    "number": "Bahçe 4",
+    "sectionId": "bahce",
+    "capacity": 6,
+    "minGuests": 3,
+    "adjacentWith": [
+      "b-3"
+    ],
+    "mergedCapacity": 12,
+    "posX": 94,
+    "posY": 82
+  },
+  {
+    "id": "l-1",
+    "number": "Loca A (Kutlama)",
+    "sectionId": "loca",
+    "capacity": 10,
+    "minGuests": 6,
+    "adjacentWith": [
+      "l-2"
+    ],
+    "mergedCapacity": 24,
+    "posX": 39,
+    "posY": 70
+  },
+  {
+    "id": "l-2",
+    "number": "Loca B (Gala Grubu)",
+    "sectionId": "loca",
+    "capacity": 16,
+    "minGuests": 10,
+    "adjacentWith": [
+      "l-1"
+    ],
+    "mergedCapacity": 26,
+    "posX": 73,
+    "posY": 74
+  }
+]

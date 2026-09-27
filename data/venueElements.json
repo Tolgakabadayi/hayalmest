@@ -1,0 +1,29 @@
+[
+  {
+    "id": "stage-1",
+    "type": "stage",
+    "name": "CANLI FASIL & MÜZİK SAHNESİ",
+    "posX": 50,
+    "posY": 10,
+    "width": 60,
+    "height": 12
+  },
+  {
+    "id": "bar-1",
+    "type": "bar",
+    "name": "Kokteyl & Rakı Barı",
+    "posX": 10,
+    "posY": 50,
+    "width": 14,
+    "height": 22
+  },
+  {
+    "id": "wine-1",
+    "type": "wine",
+    "name": "Şarap Kavı & Karşılama",
+    "posX": 90,
+    "posY": 50,
+    "width": 14,
+    "height": 22
+  }
+]
