@@ -13,6 +13,11 @@ const nextConfig = {
       }
     ],
   },
+  experimental: {
+    outputFileTracingIncludes: {
+      '/api/**/*': ['./data/**/*'],
+    },
+  },
 };
 
 export default nextConfig;

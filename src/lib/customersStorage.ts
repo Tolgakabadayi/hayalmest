@@ -1,5 +1,4 @@
-import fs from 'fs';
-import path from 'path';
+import { safeReadJson, safeWriteJson } from './safeStorage';
 import { getReservations, Reservation } from '@/lib/storage';
 
 export interface CustomerOverride {
@@ -35,17 +34,7 @@ export interface CustomerProfile {
   reservations: Reservation[];
 }
 
-const dataDir = path.join(process.cwd(), 'data');
-const customersFilePath = path.join(dataDir, 'customers.json');
-
-function ensureCustomersFile() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-  if (!fs.existsSync(customersFilePath)) {
-    fs.writeFileSync(customersFilePath, JSON.stringify({}, null, 2), 'utf-8');
-  }
-}
+const CUSTOMERS_FILE = 'customers.json';
 
 // Normalize phone for grouping (e.g. "+90 532 123 45 67" -> "05321234567")
 export function normalizePhone(rawPhone: string): string {
@@ -70,19 +59,11 @@ export function formatPhoneDisplay(rawPhone: string): string {
 
 // Read overrides from customers.json
 export function getCustomerOverrides(): Record<string, CustomerOverride> {
-  ensureCustomersFile();
-  try {
-    const raw = fs.readFileSync(customersFilePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('Error reading customers.json:', err);
-    return {};
-  }
+  return safeReadJson<Record<string, CustomerOverride>>(CUSTOMERS_FILE, {});
 }
 
 // Save overrides to customers.json
 export function saveCustomerOverride(phone: string, updates: Partial<CustomerOverride>): CustomerOverride {
-  ensureCustomersFile();
   const overrides = getCustomerOverrides();
   const normPhone = normalizePhone(phone);
 
@@ -95,7 +76,7 @@ export function saveCustomerOverride(phone: string, updates: Partial<CustomerOve
   };
 
   overrides[normPhone] = updated;
-  fs.writeFileSync(customersFilePath, JSON.stringify(overrides, null, 2), 'utf-8');
+  safeWriteJson(CUSTOMERS_FILE, overrides);
   return updated;
 }
 

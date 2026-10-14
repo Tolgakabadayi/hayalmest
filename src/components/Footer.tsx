@@ -152,7 +152,7 @@ export default function Footer() {
 
         {/* Bottom Bar */}
         <div className="mt-12 pt-8 border-t border-meyhane-border/50 flex flex-col sm:flex-row items-center justify-between text-xs text-meyhane-muted gap-4">
-          <p>© {new Date().getFullYear()} HayalMest Anadolu Meyhanesi. Tüm Hakları Saklıdır.</p>
+          <p>© <span suppressHydrationWarning>{new Date().getFullYear()}</span> HayalMest Anadolu Meyhanesi. Tüm Hakları Saklıdır.</p>
           <div className="flex items-center gap-6">
             <Link href="/menu" className="hover:text-gray-300">Menü & Fiyatlar</Link>
             <Link href="/rezervasyon" className="hover:text-gray-300">Rezervasyon Şartları</Link>

@@ -1,6 +1,5 @@
-import fs from 'fs';
-import path from 'path';
 import { ALL_TABLES, TableItem } from '@/data/tablesData';
+import { safeReadJson, safeWriteJson } from './safeStorage';
 
 export interface VenueElement {
   id: string;
@@ -14,9 +13,8 @@ export interface VenueElement {
   rotation?: number;
 }
 
-const dataDir = path.join(process.cwd(), 'data');
-const tablesFilePath = path.join(dataDir, 'tables.json');
-const elementsFilePath = path.join(dataDir, 'venueElements.json');
+const TABLES_FILE = 'tables.json';
+const ELEMENTS_FILE = 'venueElements.json';
 
 const DEFAULT_VENUE_ELEMENTS: VenueElement[] = [
   { id: 'stage-1', type: 'stage', name: 'CANLI FASIL & MÜZİK SAHNESİ', posX: 50, posY: 8, width: 44, height: 9 },
@@ -29,39 +27,18 @@ const DEFAULT_VENUE_ELEMENTS: VenueElement[] = [
 ];
 
 export function getStoredTables(): TableItem[] {
-  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-  if (!fs.existsSync(tablesFilePath)) {
-    fs.writeFileSync(tablesFilePath, JSON.stringify(ALL_TABLES, null, 2), 'utf-8');
-    return ALL_TABLES;
-  }
-  try {
-    const raw = fs.readFileSync(tablesFilePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    return ALL_TABLES;
-  }
+  return safeReadJson<TableItem[]>(TABLES_FILE, ALL_TABLES);
 }
 
 export function getStoredVenueElements(): VenueElement[] {
-  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-  if (!fs.existsSync(elementsFilePath)) {
-    fs.writeFileSync(elementsFilePath, JSON.stringify(DEFAULT_VENUE_ELEMENTS, null, 2), 'utf-8');
-    return DEFAULT_VENUE_ELEMENTS;
-  }
-  try {
-    const raw = fs.readFileSync(elementsFilePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    return DEFAULT_VENUE_ELEMENTS;
-  }
+  return safeReadJson<VenueElement[]>(ELEMENTS_FILE, DEFAULT_VENUE_ELEMENTS);
 }
 
 export function saveVenueLayout(tables: TableItem[], elements?: VenueElement[]): boolean {
-  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
   try {
-    fs.writeFileSync(tablesFilePath, JSON.stringify(tables, null, 2), 'utf-8');
+    safeWriteJson(TABLES_FILE, tables);
     if (elements) {
-      fs.writeFileSync(elementsFilePath, JSON.stringify(elements, null, 2), 'utf-8');
+      safeWriteJson(ELEMENTS_FILE, elements);
     }
     return true;
   } catch (err) {

@@ -29,10 +29,10 @@ import { getNextEventDate } from '@/lib/dateUtils';
 
 export default function HomePage() {
   const router = useRouter();
-  const [quickDate, setQuickDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
+  const [quickDate, setQuickDate] = useState('');
+  useEffect(() => {
+    setQuickDate(new Date().toISOString().split('T')[0]);
+  }, []);
   const [quickGuests, setQuickGuests] = useState('4');
   const [quickSection, setQuickSection] = useState('vip_sahne');
   const [selectedSectionDetail, setSelectedSectionDetail] = useState<TableSection | null>(null);
@@ -119,8 +119,9 @@ export default function HomePage() {
                 <input
                   type="date"
                   value={quickDate}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={quickDate}
                   onChange={(e) => setQuickDate(e.target.value)}
+                  suppressHydrationWarning={true}
                   style={{ border: 'none', outline: 'none', boxShadow: 'none' }}
                   className="w-full bg-transparent text-sm text-white font-medium border-0 border-none outline-none ring-0 focus:ring-0 focus:outline-none cursor-pointer"
                   required

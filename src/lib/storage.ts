@@ -1,5 +1,4 @@
-import fs from 'fs';
-import path from 'path';
+import { safeReadJson, safeWriteJson } from './safeStorage';
 
 export interface Reservation {
   id: string;
@@ -21,8 +20,7 @@ export interface Reservation {
   adminNotes?: string;
 }
 
-const dataDir = path.join(process.cwd(), 'data');
-const filePath = path.join(dataDir, 'reservations.json');
+const FILE_NAME = 'reservations.json';
 
 const INITIAL_RESERVATIONS: Reservation[] = [
   {
@@ -100,28 +98,11 @@ const INITIAL_RESERVATIONS: Reservation[] = [
   }
 ];
 
-function ensureDataFile() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, JSON.stringify(INITIAL_RESERVATIONS, null, 2), 'utf-8');
-  }
-}
-
 export function getReservations(): Reservation[] {
-  ensureDataFile();
-  try {
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error('Error reading reservations:', err);
-    return [];
-  }
+  return safeReadJson<Reservation[]>(FILE_NAME, INITIAL_RESERVATIONS);
 }
 
 export function saveReservation(reservationData: Omit<Reservation, 'id' | 'pnr' | 'createdAt' | 'status'>): Reservation {
-  ensureDataFile();
   const reservations = getReservations();
   
   const randomNum = Math.floor(1000 + Math.random() * 9000);
@@ -137,12 +118,11 @@ export function saveReservation(reservationData: Omit<Reservation, 'id' | 'pnr' 
   };
 
   reservations.unshift(newReservation);
-  fs.writeFileSync(filePath, JSON.stringify(reservations, null, 2), 'utf-8');
+  safeWriteJson(FILE_NAME, reservations);
   return newReservation;
 }
 
 export function updateReservation(id: string, updates: Partial<Reservation>): Reservation | null {
-  ensureDataFile();
   const reservations = getReservations();
   const index = reservations.findIndex(r => r.id === id);
   if (index === -1) return null;
@@ -152,17 +132,16 @@ export function updateReservation(id: string, updates: Partial<Reservation>): Re
     ...updates
   };
 
-  fs.writeFileSync(filePath, JSON.stringify(reservations, null, 2), 'utf-8');
+  safeWriteJson(FILE_NAME, reservations);
   return reservations[index];
 }
 
 export function deleteReservation(id: string): boolean {
-  ensureDataFile();
   let reservations = getReservations();
   const initialLen = reservations.length;
   reservations = reservations.filter(r => r.id !== id);
   if (reservations.length === initialLen) return false;
 
-  fs.writeFileSync(filePath, JSON.stringify(reservations, null, 2), 'utf-8');
+  safeWriteJson(FILE_NAME, reservations);
   return true;
 }

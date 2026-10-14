@@ -423,6 +423,7 @@ export default function HostPanelPage() {
                 <input
                   type="date"
                   value={customDate}
+                  suppressHydrationWarning={true}
                   onChange={(e) => {
                     setCustomDate(e.target.value);
                     setDateFilter('custom');

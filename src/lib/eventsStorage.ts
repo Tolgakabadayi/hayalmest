@@ -1,22 +1,10 @@
-import fs from 'fs';
-import path from 'path';
 import { STAGE_EVENTS, StageEvent } from '@/data/eventsData';
+import { safeReadJson, safeWriteJson } from './safeStorage';
 
-const dataDir = path.join(process.cwd(), 'data');
-const eventsFilePath = path.join(dataDir, 'events.json');
+const EVENTS_FILE = 'events.json';
 
 export function getEvents(): StageEvent[] {
-  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-  if (!fs.existsSync(eventsFilePath)) {
-    fs.writeFileSync(eventsFilePath, JSON.stringify(STAGE_EVENTS, null, 2), 'utf-8');
-    return STAGE_EVENTS;
-  }
-  try {
-    const raw = fs.readFileSync(eventsFilePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    return STAGE_EVENTS;
-  }
+  return safeReadJson<StageEvent[]>(EVENTS_FILE, STAGE_EVENTS);
 }
 
 export function saveEvent(eventData: Omit<StageEvent, 'id'>): StageEvent {
@@ -26,7 +14,7 @@ export function saveEvent(eventData: Omit<StageEvent, 'id'>): StageEvent {
     id: `event-${Date.now()}`
   };
   events.push(newEvent);
-  fs.writeFileSync(eventsFilePath, JSON.stringify(events, null, 2), 'utf-8');
+  safeWriteJson(EVENTS_FILE, events);
   return newEvent;
 }
 
@@ -36,7 +24,7 @@ export function updateEvent(id: string, updates: Partial<StageEvent>): StageEven
   if (index === -1) return null;
 
   events[index] = { ...events[index], ...updates };
-  fs.writeFileSync(eventsFilePath, JSON.stringify(events, null, 2), 'utf-8');
+  safeWriteJson(EVENTS_FILE, events);
   return events[index];
 }
 
@@ -46,6 +34,6 @@ export function deleteEvent(id: string): boolean {
   events = events.filter(e => e.id !== id);
   if (events.length === initLen) return false;
 
-  fs.writeFileSync(eventsFilePath, JSON.stringify(events, null, 2), 'utf-8');
+  safeWriteJson(EVENTS_FILE, events);
   return true;
 }

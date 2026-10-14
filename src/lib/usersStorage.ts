@@ -1,7 +1,6 @@
-import fs from 'fs';
-import path from 'path';
+import { safeReadJson, safeWriteJson } from './safeStorage';
 
-const DATA_PATH = path.join(process.cwd(), 'data', 'users.json');
+const USERS_FILE = 'users.json';
 
 export interface AdminUser {
   id: string;
@@ -28,17 +27,37 @@ export interface UsersData {
   hosts: HostUser[];
 }
 
+const DEFAULT_USERS: UsersData = {
+  admins: [
+    {
+      id: 'admin-1',
+      username: 'kurucu',
+      password: 'hayalmest2026',
+      displayName: 'Kurucu Yönetici',
+      role: 'founder',
+      permissions: ['all'],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      createdBy: 'system'
+    }
+  ],
+  hosts: [
+    {
+      id: 'host-1',
+      name: 'Host Ahmet',
+      pin: '1234',
+      active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      createdBy: 'system'
+    }
+  ]
+};
+
 function readUsers(): UsersData {
-  try {
-    const raw = fs.readFileSync(DATA_PATH, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return { admins: [], hosts: [] };
-  }
+  return safeReadJson<UsersData>(USERS_FILE, DEFAULT_USERS);
 }
 
 function writeUsers(data: UsersData): void {
-  fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  safeWriteJson(USERS_FILE, data);
 }
 
 export function getUsers(): UsersData {

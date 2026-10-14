@@ -1,7 +1,4 @@
-import fs from 'fs';
-import path from 'path';
-
-const dataDir = path.join(process.cwd(), 'data');
+import { safeReadJson, safeWriteJson } from './safeStorage';
 
 export interface SiteContent {
   adminPassword: string;
@@ -56,25 +53,15 @@ const DEFAULT_CONTENT: SiteContent = {
   ]
 };
 
-const contentFilePath = path.join(dataDir, 'siteContent.json');
+const CONTENT_FILE = 'siteContent.json';
 
 export function getSiteContent(): SiteContent {
-  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-  if (!fs.existsSync(contentFilePath)) {
-    fs.writeFileSync(contentFilePath, JSON.stringify(DEFAULT_CONTENT, null, 2), 'utf-8');
-    return DEFAULT_CONTENT;
-  }
-  try {
-    const raw = fs.readFileSync(contentFilePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    return DEFAULT_CONTENT;
-  }
+  return safeReadJson<SiteContent>(CONTENT_FILE, DEFAULT_CONTENT);
 }
 
 export function saveSiteContent(updates: Partial<SiteContent>): SiteContent {
   const current = getSiteContent();
   const updated = { ...current, ...updates };
-  fs.writeFileSync(contentFilePath, JSON.stringify(updated, null, 2), 'utf-8');
+  safeWriteJson(CONTENT_FILE, updated);
   return updated;
 }

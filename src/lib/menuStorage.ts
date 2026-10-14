@@ -1,22 +1,10 @@
-import fs from 'fs';
-import path from 'path';
 import { MENU_ITEMS, MenuItem } from '@/data/menuData';
+import { safeReadJson, safeWriteJson } from './safeStorage';
 
-const dataDir = path.join(process.cwd(), 'data');
-const menuFilePath = path.join(dataDir, 'menu.json');
+const MENU_FILE = 'menu.json';
 
 export function getMenuItems(): MenuItem[] {
-  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-  if (!fs.existsSync(menuFilePath)) {
-    fs.writeFileSync(menuFilePath, JSON.stringify(MENU_ITEMS, null, 2), 'utf-8');
-    return MENU_ITEMS;
-  }
-  try {
-    const raw = fs.readFileSync(menuFilePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    return MENU_ITEMS;
-  }
+  return safeReadJson<MenuItem[]>(MENU_FILE, MENU_ITEMS);
 }
 
 export function saveMenuItem(itemData: Omit<MenuItem, 'id'>): MenuItem {
@@ -26,7 +14,7 @@ export function saveMenuItem(itemData: Omit<MenuItem, 'id'>): MenuItem {
     id: `item-${Date.now()}`
   };
   items.push(newItem);
-  fs.writeFileSync(menuFilePath, JSON.stringify(items, null, 2), 'utf-8');
+  safeWriteJson(MENU_FILE, items);
   return newItem;
 }
 
@@ -36,7 +24,7 @@ export function updateMenuItem(id: string, updates: Partial<MenuItem>): MenuItem
   if (index === -1) return null;
 
   items[index] = { ...items[index], ...updates };
-  fs.writeFileSync(menuFilePath, JSON.stringify(items, null, 2), 'utf-8');
+  safeWriteJson(MENU_FILE, items);
   return items[index];
 }
 
@@ -46,6 +34,6 @@ export function deleteMenuItem(id: string): boolean {
   items = items.filter(m => m.id !== id);
   if (items.length === initLen) return false;
 
-  fs.writeFileSync(menuFilePath, JSON.stringify(items, null, 2), 'utf-8');
+  safeWriteJson(MENU_FILE, items);
   return true;
 }

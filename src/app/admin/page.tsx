@@ -823,6 +823,7 @@ export default function AdminPage() {
                   <input
                     type="date"
                     value={selectedDate}
+                    suppressHydrationWarning={true}
                     onChange={(e) => {
                       setSelectedDate(e.target.value);
                       setFloorDate(e.target.value);
@@ -1464,6 +1465,7 @@ export default function AdminPage() {
               <input
                 type="date"
                 value={floorDate}
+                suppressHydrationWarning={true}
                 onChange={(e) => setFloorDate(e.target.value)}
                 className="bg-meyhane-bg border border-meyhane-border px-3 py-1.5 rounded-xl text-white font-medium focus:border-gold focus:outline-none cursor-pointer"
               />
@@ -2432,6 +2434,7 @@ export default function AdminPage() {
                     type="date"
                     required
                     value={newRes.date}
+                    suppressHydrationWarning={true}
                     onChange={(e) => setNewRes({ ...newRes, date: e.target.value })}
                     className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none"
                   />

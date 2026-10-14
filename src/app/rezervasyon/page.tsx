@@ -308,13 +308,14 @@ function ReservationContent() {
                 <input
                   type="date"
                   value={date}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={date}
                   onChange={(e) => setDate(e.target.value)}
+                  suppressHydrationWarning={true}
                   className="w-full bg-meyhane-surface text-white px-4 py-3 rounded-xl border border-meyhane-border focus:border-gold focus:outline-none text-base font-medium cursor-pointer"
                   required
                 />
                 <p className="text-[11px] text-meyhane-muted pt-1">
-                  Seçilen Tarih: <span className="text-gold font-medium">{date}</span>
+                  Seçilen Tarih: <span className="text-gold font-medium" suppressHydrationWarning>{date}</span>
                 </p>
               </div>
 
