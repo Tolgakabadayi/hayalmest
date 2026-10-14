@@ -8,8 +8,8 @@ import { MapPin, Phone, Mail, Clock, Instagram, Facebook, Youtube, CalendarCheck
 export default function Footer() {
   const pathname = usePathname();
 
-  // Hide on admin and host panels
-  if (pathname?.startsWith('/admin') || pathname?.startsWith('/host')) {
+  // Hide on admin, host, waiter, and table menu desks
+  if (pathname?.startsWith('/admin') || pathname?.startsWith('/host') || pathname?.startsWith('/garson') || pathname?.startsWith('/masa')) {
     return null;
   }
 

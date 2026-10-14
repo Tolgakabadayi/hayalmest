@@ -19,8 +19,8 @@ export default function Navbar() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Hide customer navbar on admin and host desks to prevent overlapping dashboard
-  if (pathname?.startsWith('/admin') || pathname?.startsWith('/host')) {
+  // Hide customer navbar on admin, host, waiter, and table menu desks
+  if (pathname?.startsWith('/admin') || pathname?.startsWith('/host') || pathname?.startsWith('/garson') || pathname?.startsWith('/masa')) {
     return null;
   }
 
