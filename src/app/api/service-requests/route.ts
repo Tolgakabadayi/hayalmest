@@ -96,7 +96,7 @@ export async function POST(request: Request) {
         bodyText = `${cleanSection ? '📍 ' + cleanSection + ' • ' : ''}Misafir masada servis bekliyor.`;
       }
 
-      sendPushToWaiters({
+      const pushResult = await sendPushToWaiters({
         title: callTitle,
         body: bodyText,
         image: bannerImage,
@@ -109,7 +109,8 @@ export async function POST(request: Request) {
           url: '/garson',
         },
         vibrate: [500, 200, 500, 200, 500, 200, 700],
-      }).catch(err => console.error('Push broadcast error:', err));
+      });
+      console.log(`[ServiceRequests] Push delivered to ${pushResult.successCount} / ${pushResult.totalSubscribers} waiter devices.`);
     } catch (pushErr) {
       console.error('Push dispatch failed:', pushErr);
     }

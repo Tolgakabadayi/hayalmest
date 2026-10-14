@@ -1,5 +1,5 @@
 // HayalMest Garson - Service Worker for PWA & Background Push Notifications
-const CACHE_NAME = 'hayalmest-garson-v2';
+const CACHE_NAME = 'hayalmest-garson-v3';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -7,6 +7,26 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
+});
+
+// Periodic background sync if supported by Android Chrome
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === 'sync-calls') {
+    event.waitUntil(
+      fetch('/api/service-requests?_t=' + Date.now())
+        .then(res => res.json())
+        .then(json => {
+          if (json.success && json.data) {
+            return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+              for (const c of clients) {
+                c.postMessage({ type: 'REFRESH_REQUESTS' });
+              }
+            });
+          }
+        })
+        .catch(() => {})
+    );
+  }
 });
 
 // Background Push Notification Event (Wakes up screen, vibrates & shows rich visual banner)
@@ -33,6 +53,8 @@ self.addEventListener('push', (event) => {
     tag: data.tag || `hayalmest-${Date.now()}`,
     renotify: true,
     requireInteraction: true, // Keep notification visible until actioned
+    silent: false, // Ensures screen wake and audio alert even when locked
+    timestamp: Date.now(),
     data: data.data || { url: '/garson' },
     actions: data.actions || [
       { action: 'complete', title: '✅ GİDİLDİ' },

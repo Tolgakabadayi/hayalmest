@@ -108,6 +108,8 @@ export async function sendPushToWaiters(payload: PushNotificationPayload): Promi
       timestamp: Date.now(),
       ...payload.data,
     },
+    silent: false,
+    requireInteraction: true,
     actions: payload.actions || [
       { action: 'complete', title: '✅ Masaya Gidildi' },
       { action: 'open', title: '📲 Masayı Aç' },
@@ -118,31 +120,36 @@ export async function sendPushToWaiters(payload: PushNotificationPayload): Promi
   let failureCount = 0;
   const expiredEndpoints: string[] = [];
 
-  for (const sub of subs) {
-    try {
-      // TTL: 300 seconds, urgency: 'high' forces instant wakeup and screen lighting on Android/iOS
-      await webpush.sendNotification(
-        {
-          endpoint: sub.endpoint,
-          keys: sub.keys,
-        },
-        notificationPayload,
-        {
-          TTL: 300,
-          urgency: 'high',
+  // Broadcast concurrently to all subscribed devices for instant delivery
+  await Promise.allSettled(
+    subs.map(async (sub) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: sub.keys,
+          },
+          notificationPayload,
+          {
+            TTL: 86400, // 24 hours prevents FCM dropping if device in deep sleep
+            urgency: 'high',
+            headers: {
+              Urgency: 'high',
+            },
+          }
+        );
+        successCount++;
+      } catch (err: any) {
+        failureCount++;
+        // If 410 (Gone) or 404 (Not Found), subscription is revoked or expired
+        if (err.statusCode === 410 || err.statusCode === 404) {
+          expiredEndpoints.push(sub.endpoint);
+        } else {
+          console.warn(`[WebPush] Delivery warning (${sub.endpoint.slice(0, 30)}...):`, err.message);
         }
-      );
-      successCount++;
-    } catch (err: any) {
-      failureCount++;
-      // If 410 (Gone) or 404 (Not Found), subscription is revoked or expired
-      if (err.statusCode === 410 || err.statusCode === 404) {
-        expiredEndpoints.push(sub.endpoint);
-      } else {
-        console.warn(`[WebPush] Delivery warning (${sub.endpoint.slice(0, 30)}...):`, err.message);
       }
-    }
-  }
+    })
+  );
 
   // Clean up expired tokens
   if (expiredEndpoints.length > 0) {

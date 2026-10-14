@@ -20,7 +20,9 @@ import {
   Smartphone,
   Droplets,
   MapPin,
-  History
+  History,
+  Zap,
+  ShieldAlert
 } from 'lucide-react';
 import { ServiceRequest } from '@/lib/serviceRequestsStorage';
 import { playNotificationChime } from '@/lib/audioNotification';
@@ -59,6 +61,7 @@ export default function WaiterPanelPage() {
   const [pushLoading, setPushLoading] = useState(false);
   const [pushMsg, setPushMsg] = useState('');
   const [showIosGuide, setShowIosGuide] = useState(false);
+  const [showBatteryGuide, setShowBatteryGuide] = useState(false);
 
   const prevPendingIds = useRef<Set<string>>(new Set());
   const initialFetchDone = useRef(false);
@@ -131,115 +134,7 @@ export default function WaiterPanelPage() {
     }
   }, []);
 
-  // 3. Register Service Worker on mount & Listen to instant Push payload
-  useEffect(() => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      setPushStatus('unsupported');
-      return;
-    }
-
-    navigator.serviceWorker
-      .register('/sw.js')
-      .then(async (reg) => {
-        if ('Notification' in window) {
-          const perm = Notification.permission;
-          setPushStatus(perm as any);
-          if (perm === 'granted') {
-            await syncPushSubscription(waiterName);
-          }
-        }
-      })
-      .catch((err) => {
-        console.error('Service Worker registration error:', err);
-        setPushStatus('unsupported');
-      });
-
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'NEW_CALL_ARRIVED') {
-        const payload = event.data?.payload;
-        if (payload && payload.id) {
-          setRequests(prev => {
-            if (prev.some(r => r.id === payload.id)) return prev;
-            const updated = [payload, ...prev];
-            try {
-              localStorage.setItem('hayalmest_garson_requests', JSON.stringify(updated));
-            } catch (e) {}
-            return updated;
-          });
-        }
-        fetchRequests(true);
-      } else if (event.data?.type === 'REFRESH_REQUESTS') {
-        fetchRequests(true);
-      }
-    };
-    navigator.serviceWorker.addEventListener('message', handleMessage);
-    return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
-  }, [syncPushSubscription, waiterName]);
-
-  // 4. Request Push Notification Permission
-  const handleEnablePush = async () => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      alert('Bu tarayıcı kilit ekranı bildirimlerini desteklemiyor. iOS cihazlarda lütfen Safari "Paylaş > Ana Ekrana Ekle" yaparak açın.');
-      return;
-    }
-
-    setPushLoading(true);
-    try {
-      const permission = await Notification.requestPermission();
-      setPushStatus(permission as any);
-
-      if (permission === 'granted') {
-        const synced = await syncPushSubscription(waiterName);
-        if ('vibrate' in navigator) {
-          navigator.vibrate([100, 50, 100]);
-        }
-        if (synced) {
-          setPushMsg('✅ Bildirim ve titreşim açıldı!');
-        } else {
-          setPushMsg('⚠️ İzin verildi ancak abonelik yenilenemedi.');
-        }
-      } else if (permission === 'denied') {
-        alert('Bildirim izni reddedildi. Telefon ayarlarından tarayıcı bildirimlerine izin verebilirsiniz.');
-      }
-    } catch (err: any) {
-      console.error('Bildirim hatası:', err);
-      alert('Hata: ' + err.message);
-    } finally {
-      setPushLoading(false);
-      setTimeout(() => setPushMsg(''), 4000);
-    }
-  };
-
-  // 5. Test Push Notification
-  const handleTestPushNotification = async () => {
-    setPushLoading(true);
-    setPushMsg('⏳ Test bildirimi hazırlanıyor...');
-    try {
-      await syncPushSubscription(waiterName);
-
-      const res = await fetch('/api/waiter/push-subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ test: true }),
-      });
-      const json = await res.json();
-      if (json.success && json.successCount > 0) {
-        setPushMsg(`🛎️ Telefonunuza 'MASA 4 GARSON İSTİYOR' bildirimi yollandı!`);
-        if ('vibrate' in navigator) {
-          navigator.vibrate([500, 200, 500, 200, 500, 200, 700]);
-        }
-      } else {
-        setPushMsg('⚠️ Bildirim gönderilemedi. Lütfen "İzin Ver" butonuna dokunun.');
-      }
-    } catch (e) {
-      setPushMsg('❌ Test gönderiminde hata oluştu.');
-    } finally {
-      setPushLoading(false);
-      setTimeout(() => setPushMsg(''), 6000);
-    }
-  };
-
-  // 6. Fetch Requests with Cache-Busting & Resilient Merge
+  // 3. Fetch Requests with Cache-Busting & Resilient Merge
   const fetchRequests = useCallback(async (silent = false) => {
     if (!silent) setIsRefreshing(true);
     try {
@@ -303,6 +198,140 @@ export default function WaiterPanelPage() {
       setIsRefreshing(false);
     }
   }, [soundEnabled]);
+
+  // 4. Register Service Worker on mount & Listen to instant Push payload
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushStatus('unsupported');
+      return;
+    }
+
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then(async (reg) => {
+        if ('Notification' in window) {
+          const perm = Notification.permission;
+          setPushStatus(perm as any);
+          if (perm === 'granted') {
+            await syncPushSubscription(waiterName);
+          }
+        }
+        if ('periodicSync' in reg) {
+          try {
+            await (reg as any).periodicSync.register('sync-calls', {
+              minInterval: 60 * 1000,
+            });
+          } catch (e) {
+            // Periodic sync may require PWA installation
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Service Worker registration error:', err);
+        setPushStatus('unsupported');
+      });
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'NEW_CALL_ARRIVED') {
+        const payload = event.data?.payload;
+        if (payload && payload.id) {
+          setRequests(prev => {
+            if (prev.some(r => r.id === payload.id)) return prev;
+            const updated = [payload, ...prev];
+            try {
+              localStorage.setItem('hayalmest_garson_requests', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
+        }
+        fetchRequests(true);
+      } else if (event.data?.type === 'REFRESH_REQUESTS') {
+        fetchRequests(true);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handleMessage);
+
+    // Auto-sync whenever phone screen wakes up or waiter switches back to app
+    const handleWakeup = () => {
+      if (document.visibilityState === 'visible') {
+        fetchRequests(true);
+        if ('Notification' in window && Notification.permission === 'granted') {
+          syncPushSubscription(waiterName);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleWakeup);
+    window.addEventListener('focus', handleWakeup);
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage);
+      document.removeEventListener('visibilitychange', handleWakeup);
+      window.removeEventListener('focus', handleWakeup);
+    };
+  }, [syncPushSubscription, waiterName, fetchRequests]);
+
+  // 4. Request Push Notification Permission
+  const handleEnablePush = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      alert('Bu tarayıcı kilit ekranı bildirimlerini desteklemiyor. iOS cihazlarda lütfen Safari "Paylaş > Ana Ekrana Ekle" yaparak açın.');
+      return;
+    }
+
+    setPushLoading(true);
+    try {
+      const permission = await Notification.requestPermission();
+      setPushStatus(permission as any);
+
+      if (permission === 'granted') {
+        const synced = await syncPushSubscription(waiterName);
+        if ('vibrate' in navigator) {
+          navigator.vibrate([100, 50, 100]);
+        }
+        if (synced) {
+          setPushMsg('✅ Bildirim ve titreşim açıldı!');
+        } else {
+          setPushMsg('⚠️ İzin verildi ancak abonelik yenilenemedi.');
+        }
+      } else if (permission === 'denied') {
+        alert('Bildirim izni reddedildi. Telefon ayarlarından tarayıcı bildirimlerine izin verebilirsiniz.');
+      }
+    } catch (err: any) {
+      console.error('Bildirim hatası:', err);
+      alert('Hata: ' + err.message);
+    } finally {
+      setPushLoading(false);
+      setTimeout(() => setPushMsg(''), 4000);
+    }
+  };
+
+  // 5. Test Push Notification
+  const handleTestPushNotification = async () => {
+    setPushLoading(true);
+    setPushMsg('⏳ Test bildirimi hazırlanıyor...');
+    try {
+      await syncPushSubscription(waiterName);
+
+      const res = await fetch('/api/waiter/push-subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ test: true }),
+      });
+      const json = await res.json();
+      if (json.success && json.successCount > 0) {
+        setPushMsg(`🛎️ Telefonunuza 'MASA 4 GARSON İSTİYOR' bildirimi yollandı!`);
+        if ('vibrate' in navigator) {
+          navigator.vibrate([500, 200, 500, 200, 500, 200, 700]);
+        }
+      } else {
+        setPushMsg('⚠️ Bildirim gönderilemedi. Lütfen "İzin Ver" butonuna dokunun.');
+      }
+    } catch (e) {
+      setPushMsg('❌ Test gönderiminde hata oluştu.');
+    } finally {
+      setPushLoading(false);
+      setTimeout(() => setPushMsg(''), 6000);
+    }
+  };
 
   // Polling every 3.5s
   useEffect(() => {
@@ -840,6 +869,30 @@ export default function WaiterPanelPage() {
               </button>
             </div>
 
+            {/* Android & iPhone Deep Sleep Battery Guide Card */}
+            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-semibold text-amber-300">
+                  <Zap className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <span>Ekran Kapalıyken Bildirim Duruyor mu?</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  Önemli
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-300 leading-relaxed">
+                Xiaomi, Samsung ve Android cihazlar ekran kapalıyken Chrome&apos;u uyku moduna alabilir. 10 saniyelik ayarla bunu kapatın.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowBatteryGuide(true)}
+                className="w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span>Uyku Önleme ve Pil Ayarı Rehberi</span>
+              </button>
+            </div>
+
             {/* Logout Button */}
             <button
               type="button"
@@ -898,6 +951,74 @@ export default function WaiterPanelPage() {
               className="w-full py-2.5 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider"
             >
               Anladım
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 5. ANDROID & BATTERY DEEP SLEEP GUIDE MODAL */}
+      {showBatteryGuide && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md p-4 flex items-end sm:items-center justify-center animate-fadeIn">
+          <div className="luxury-card max-w-sm w-full rounded-2xl p-5 border border-amber-500/50 shadow-2xl space-y-4 bg-[#141824] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold font-serif text-white">Ekran Kapalı Bildirim Ayarı</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBatteryGuide(false)}
+                className="p-1 text-gray-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-gray-300 space-y-3">
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] leading-relaxed">
+                <strong>💡 Sorun Nedir?</strong><br />
+                Xiaomi, Samsung ve diğer Android telefonlar, ekran kilitlendikten 5-10 dakika sonra pil tasarrufu için Chrome ve internet bağlantısını uyku moduna alır.
+              </div>
+
+              <div className="space-y-2.5 text-[11px]">
+                <p className="font-bold text-white text-xs">📱 Çözüm (Tek Seferlik 10 Saniyelik Ayar):</p>
+
+                {/* Xiaomi / Redmi */}
+                <div className="p-3 rounded-xl bg-black/50 border border-white/10 space-y-1.5">
+                  <div className="font-bold text-amber-400">Xiaomi / Redmi (MIUI &amp; HyperOS):</div>
+                  <ol className="list-decimal list-inside space-y-1 text-gray-300">
+                    <li>Telefonunuzun <strong>Ayarlar &gt; Uygulamalar &gt; Uygulamaları Yönet</strong> bölümüne girin.</li>
+                    <li><strong>Chrome</strong> (veya Ana Ekrana eklediğiniz <strong>HayalMest</strong>) uygulamasını seçin.</li>
+                    <li><strong>Pil Tasarrufu</strong> seçeneğini açıp <strong>&ldquo;Kısıtlama Yok&rdquo;</strong> yapın.</li>
+                    <li>Varsa <strong>&ldquo;Otomatik Başlatma&rdquo;</strong> iznini açık konuma getirin.</li>
+                  </ol>
+                </div>
+
+                {/* Samsung */}
+                <div className="p-3 rounded-xl bg-black/50 border border-white/10 space-y-1.5">
+                  <div className="font-bold text-amber-400">Samsung (One UI):</div>
+                  <ol className="list-decimal list-inside space-y-1 text-gray-300">
+                    <li><strong>Ayarlar &gt; Uygulamalar &gt; Chrome</strong>&apos;a dokunun.</li>
+                    <li><strong>Pil</strong> menüsüne dokunun ve <strong>&ldquo;Kısıtlanmamış&rdquo;</strong> seçin.</li>
+                  </ol>
+                </div>
+
+                {/* iPhone */}
+                <div className="p-3 rounded-xl bg-black/50 border border-white/10 space-y-1.5">
+                  <div className="font-bold text-amber-400">iPhone (iOS):</div>
+                  <p className="text-gray-300">
+                    Ayarlar &gt; Pil bölümünde <strong>Düşük Güç Modu</strong> kapalı olmalıdır. Uygulama &ldquo;Ana Ekrana Ekle&rdquo; ile çalışmalıdır.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowBatteryGuide(false)}
+              className="w-full py-2.5 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider"
+            >
+              Anladım, Harika!
             </button>
           </div>
         </div>
