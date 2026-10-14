@@ -1,62 +1,93 @@
 import fs from 'fs';
 import path from 'path';
 
-// Memory cache to guarantee data availability even if filesystem is read-only
+// Memory cache to guarantee data availability across calls in current runtime
 const memoryStore: Record<string, any> = {};
 
 /**
  * Safely reads a JSON file from disk.
- * Prioritizes local project data directory (process.cwd()/data),
- * falls back to /tmp (for serverless environments),
- * and finally to in-memory store or defaultData.
+ * Checks both /tmp (where serverless writes persist) and local project data directory,
+ * compares modification times (mtimeMs) to pick the newest copy,
+ * and falls back to memoryStore or defaultData.
  */
 export function safeReadJson<T>(fileName: string, defaultData: T): T {
-  // 1. Check bundled project data directory (process.cwd()/data)
-  try {
-    const localPath = path.join(process.cwd(), 'data', fileName);
-    if (fs.existsSync(localPath)) {
-      const raw = fs.readFileSync(localPath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      memoryStore[fileName] = parsed;
-      return parsed;
-    }
-  } catch (err) {
-    console.warn(`[safeStorage] Could not read ${fileName} from local data dir:`, err);
-  }
+  let tmpData: T | null = null;
+  let tmpMtime = 0;
+  let localData: T | null = null;
+  let localMtime = 0;
 
-  // 2. Check /tmp directory fallback (for serverless environments)
+  // 1. Check /tmp directory (where runtime writes happen on Vercel/serverless)
   try {
     const tmpPath = path.join('/tmp', 'hayalmest_data', fileName);
     if (fs.existsSync(tmpPath)) {
+      const stat = fs.statSync(tmpPath);
+      tmpMtime = stat.mtimeMs;
       const raw = fs.readFileSync(tmpPath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      memoryStore[fileName] = parsed;
-      return parsed;
+      tmpData = JSON.parse(raw);
     }
   } catch (err) {
     // Ignore tmp read errors
   }
 
-  // 3. Fallback to in-memory store if previously written
-  if (memoryStore[fileName] !== undefined) {
-    return memoryStore[fileName];
+  // 2. Check local data directory (process.cwd()/data)
+  try {
+    const localPath = path.join(process.cwd(), 'data', fileName);
+    if (fs.existsSync(localPath)) {
+      const stat = fs.statSync(localPath);
+      localMtime = stat.mtimeMs;
+      const raw = fs.readFileSync(localPath, 'utf-8');
+      localData = JSON.parse(raw);
+    }
+  } catch (err) {
+    // Ignore local read errors
   }
 
-  // 4. Default data fallback
+  // 3. Determine newest data between /tmp and local data/
+  let newestData: T | null = null;
+  if (tmpData !== null && localData !== null) {
+    newestData = tmpMtime >= localMtime ? tmpData : localData;
+  } else if (tmpData !== null) {
+    newestData = tmpData;
+  } else if (localData !== null) {
+    newestData = localData;
+  }
+
+  // If valid data found from disk
+  if (newestData !== null) {
+    // Safeguard: if disk has empty array [] but memoryStore has active items,
+    // do not clobber in-memory active items
+    if (
+      Array.isArray(newestData) &&
+      newestData.length === 0 &&
+      Array.isArray(memoryStore[fileName]) &&
+      memoryStore[fileName].length > 0
+    ) {
+      return memoryStore[fileName] as T;
+    }
+    memoryStore[fileName] = newestData;
+    return newestData;
+  }
+
+  // 4. Fallback to in-memory store if previously written
+  if (memoryStore[fileName] !== undefined) {
+    return memoryStore[fileName] as T;
+  }
+
+  // 5. Default data fallback
   memoryStore[fileName] = defaultData;
   return defaultData;
 }
 
 /**
  * Safely writes a JSON file to disk.
- * Always updates memoryStore immediately, then attempts to write to disk.
- * Falls back to /tmp if local filesystem is read-only (EROFS).
+ * Writes to BOTH /tmp and local project data directory (if writable),
+ * ensuring the latest writes are picked up in all environments.
  */
 export function safeWriteJson<T>(fileName: string, data: T): void {
   // Always update in-memory cache first
   memoryStore[fileName] = data;
 
-  // 1. Try writing to local project data directory
+  // 1. Write to local project data directory (if writable)
   try {
     const localDir = path.join(process.cwd(), 'data');
     if (!fs.existsSync(localDir)) {
@@ -64,22 +95,19 @@ export function safeWriteJson<T>(fileName: string, data: T): void {
     }
     const localPath = path.join(localDir, fileName);
     fs.writeFileSync(localPath, JSON.stringify(data, null, 2), 'utf-8');
-    return;
-  } catch (err: any) {
-    // 2. If EROFS (read-only filesystem on Vercel), write to /tmp
-    if (err && (err.code === 'EROFS' || err.code === 'EACCES')) {
-      try {
-        const tmpDir = path.join('/tmp', 'hayalmest_data');
-        if (!fs.existsSync(tmpDir)) {
-          fs.mkdirSync(tmpDir, { recursive: true });
-        }
-        const tmpPath = path.join(tmpDir, fileName);
-        fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
-        return;
-      } catch (tmpErr) {
-        console.warn(`[safeStorage] /tmp fallback write failed for ${fileName}:`, tmpErr);
-      }
+  } catch (err) {
+    // Expected on Vercel EROFS read-only environment
+  }
+
+  // 2. Always write to /tmp directory as well
+  try {
+    const tmpDir = path.join('/tmp', 'hayalmest_data');
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
     }
-    console.warn(`[safeStorage] Disk write bypassed for ${fileName}:`, err);
+    const tmpPath = path.join(tmpDir, fileName);
+    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (tmpErr) {
+    console.warn(`[safeStorage] /tmp write failed for ${fileName}:`, tmpErr);
   }
 }

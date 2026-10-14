@@ -79,6 +79,7 @@ export async function POST(request: Request) {
         image: '/icons/garson-icon.jpg',
         tag: `call-${newReq.tableId}-${Date.now()}`,
         data: {
+          request: newReq,
           requestId: newReq.id,
           tableId: newReq.tableId,
           type: newReq.type,

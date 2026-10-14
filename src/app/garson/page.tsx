@@ -157,7 +157,20 @@ export default function WaiterPanelPage() {
       });
 
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'NEW_CALL_ARRIVED' || event.data?.type === 'REFRESH_REQUESTS') {
+      if (event.data?.type === 'NEW_CALL_ARRIVED') {
+        const payload = event.data?.payload;
+        if (payload && payload.id) {
+          setRequests(prev => {
+            if (prev.some(r => r.id === payload.id)) return prev;
+            const updated = [payload, ...prev];
+            try {
+              localStorage.setItem('hayalmest_garson_requests', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
+        }
+        fetchRequests(true);
+      } else if (event.data?.type === 'REFRESH_REQUESTS') {
         fetchRequests(true);
       }
     };
@@ -249,12 +262,30 @@ export default function WaiterPanelPage() {
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         const data: ServiceRequest[] = json.data;
-        setRequests(data);
 
-        // Keep local cache up to date
-        try {
-          localStorage.setItem('hayalmest_garson_requests', JSON.stringify(data));
-        } catch (e) {}
+        setRequests(prev => {
+          // Merge server data with any existing calls
+          const serverMap = new Map<string, ServiceRequest>();
+          for (const s of data) {
+            serverMap.set(s.id, s);
+          }
+
+          const combined = [...data];
+          // Preserve any local calls that haven't reached this serverless instance yet
+          for (const localReq of prev) {
+            if (!serverMap.has(localReq.id)) {
+              combined.push(localReq);
+            }
+          }
+
+          combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+          try {
+            localStorage.setItem('hayalmest_garson_requests', JSON.stringify(combined));
+          } catch (e) {}
+
+          return combined;
+        });
 
         // Sound & Vibration alert for new pending requests
         const currentPendingIds = new Set(data.filter(r => r.status === 'pending').map(r => r.id));

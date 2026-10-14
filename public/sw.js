@@ -40,8 +40,22 @@ self.addEventListener('push', (event) => {
     ]
   };
 
+  const notifyClients = self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+    for (const client of clients) {
+      if (client.url.includes('/garson')) {
+        client.postMessage({
+          type: 'NEW_CALL_ARRIVED',
+          payload: data.data?.request,
+        });
+      }
+    }
+  }).catch((err) => console.warn('Could not post to clients:', err));
+
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    Promise.all([
+      self.registration.showNotification(title, options),
+      notifyClients
+    ])
   );
 });
 
