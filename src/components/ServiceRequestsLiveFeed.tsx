@@ -29,7 +29,13 @@ export default function ServiceRequestsLiveFeed() {
 
   const fetchRequests = async () => {
     try {
-      const res = await fetch('/api/service-requests');
+      const res = await fetch(`/api/service-requests?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         const fetched: ServiceRequest[] = json.data;

@@ -17,9 +17,12 @@ import {
   Vibrate, 
   Settings, 
   X,
-  Download,
   Smartphone,
-  Layers
+  Sparkles,
+  Droplets,
+  UtensilsCrossed,
+  MapPin,
+  History
 } from 'lucide-react';
 import { ServiceRequest } from '@/lib/serviceRequestsStorage';
 import { playNotificationChime } from '@/lib/audioNotification';
@@ -48,7 +51,7 @@ export default function WaiterPanelPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
-  // View state: 'pending' (default) or 'completed' or 'settings'
+  // View state: 'pending' (default) | 'completed' | 'settings'
   const [viewTab, setViewTab] = useState<'pending' | 'completed' | 'settings'>('pending');
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
@@ -62,15 +65,29 @@ export default function WaiterPanelPage() {
   const prevPendingIds = useRef<Set<string>>(new Set());
   const initialFetchDone = useRef(false);
 
-  // 1. Auth check
+  // 1. Auth check & Hydrate cached requests from localStorage
   useEffect(() => {
     const token = localStorage.getItem('hayalmest_waiter_token');
     const name = localStorage.getItem('hayalmest_waiter_name');
     if (!token) {
       router.push('/garson/login');
-    } else {
-      if (name) setWaiterName(name);
-      setIsAuthenticated(true);
+      return;
+    }
+    if (name) setWaiterName(name);
+    setIsAuthenticated(true);
+
+    // Instant local cache hydration so screen is never blank or empty
+    try {
+      const cached = localStorage.getItem('hayalmest_garson_requests');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRequests(parsed);
+          setLoading(false);
+        }
+      }
+    } catch (e) {
+      // Ignore cache parse error
     }
   }, [router]);
 
@@ -166,7 +183,7 @@ export default function WaiterPanelPage() {
           navigator.vibrate([100, 50, 100]);
         }
         if (synced) {
-          setPushMsg('✅ Titreşim ve bildirim açıldı!');
+          setPushMsg('✅ Titreşim ve kilit ekranı bildirimi açıldı!');
         } else {
           setPushMsg('⚠️ İzin verildi ancak abonelik yenilenemedi.');
         }
@@ -201,7 +218,7 @@ export default function WaiterPanelPage() {
           navigator.vibrate([500, 200, 500, 200, 500, 200, 700]);
         }
       } else {
-        setPushMsg('⚠️ Bildirim gönderilemedi. Lütfen "Bildirimleri Aç" butonuna dokunun.');
+        setPushMsg('⚠️ Bildirim gönderilemedi. Lütfen "İzin Ver" butonuna dokunun.');
       }
     } catch (e) {
       setPushMsg('❌ Test gönderiminde hata oluştu.');
@@ -211,15 +228,33 @@ export default function WaiterPanelPage() {
     }
   };
 
-  // 6. Fetch Requests
+  // 6. Fetch Requests with Cache-Busting & Fallback Preservation
   const fetchRequests = useCallback(async (silent = false) => {
     if (!silent) setIsRefreshing(true);
     try {
-      const res = await fetch('/api/service-requests');
+      // Use timestamp query param and cache: no-store to prevent any 304 or HTTP cache glitch
+      const res = await fetch(`/api/service-requests?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      });
+
+      if (!res.ok) {
+        console.warn('Servis talepleri geçici yanıt alamadı:', res.status);
+        return; // Don't wipe requests on server glitch!
+      }
+
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         const data: ServiceRequest[] = json.data;
         setRequests(data);
+
+        // Keep local cache up to date
+        try {
+          localStorage.setItem('hayalmest_garson_requests', JSON.stringify(data));
+        } catch (e) {}
 
         // Sound & Vibration alert for new pending requests
         const currentPendingIds = new Set(data.filter(r => r.status === 'pending').map(r => r.id));
@@ -237,6 +272,7 @@ export default function WaiterPanelPage() {
       }
     } catch (err) {
       console.error('Talepler alınamadı:', err);
+      // DO NOT clear requests on fetch error! Keep existing!
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -253,32 +289,42 @@ export default function WaiterPanelPage() {
     return () => clearInterval(interval);
   }, [isAuthenticated, fetchRequests]);
 
-  // Update request status (Complete call)
+  // Update request status (Complete call with optimistic UI)
   const handleCompleteRequest = async (id: string) => {
     setActionLoadingId(id);
     if ('vibrate' in navigator) {
-      navigator.vibrate(60);
+      navigator.vibrate(80);
     }
+
+    // Optimistically update state and local cache immediately
+    const nowIso = new Date().toISOString();
+    setRequests(prev => {
+      const updated = prev.map(r => r.id === id ? { 
+        ...r, 
+        status: 'completed' as const,
+        completedBy: waiterName,
+        completedAt: nowIso
+      } : r);
+      try {
+        localStorage.setItem('hayalmest_garson_requests', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
     try {
-      const res = await fetch(`/api/service-requests/${id}`, {
+      await fetch(`/api/service-requests/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
         body: JSON.stringify({
           status: 'completed',
           completedBy: waiterName,
         }),
       });
-      const json = await res.json();
-      if (json.success) {
-        setRequests(prev => prev.map(r => r.id === id ? { 
-          ...r, 
-          status: 'completed',
-          completedBy: waiterName,
-          completedAt: new Date().toISOString()
-        } : r));
-      }
     } catch (err) {
-      alert('İşlem güncellenemedi');
+      console.error('Sunucu güncelleme hatası:', err);
     } finally {
       setActionLoadingId(null);
     }
@@ -300,32 +346,33 @@ export default function WaiterPanelPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#090C10] text-white flex flex-col justify-between selection:bg-gold selection:text-black">
+    <div className="min-h-screen bg-[#0A0D14] text-white flex flex-col selection:bg-gold selection:text-black">
       
-      {/* 1. ULTRA-CLEAN NATIVE APP HEADER (SADECE BİR TEK HEADER) */}
-      <header className="sticky top-0 z-40 bg-[#121620] border-b border-gold/30 shadow-md">
-        <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
+      {/* 1. TOP NATIVE APP BAR */}
+      <header className="sticky top-0 z-40 bg-[#121620]/98 backdrop-blur-md border-b border-gold/30 shadow-lg">
+        <div className="max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
           
-          {/* Waiter Brand & Name */}
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl overflow-hidden border border-gold/60 shadow flex-shrink-0 relative bg-black">
+          {/* App Branding & Waiter Name */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl overflow-hidden border border-gold/60 shadow-md flex-shrink-0 relative bg-black">
               <Image src="/icons/garson-icon.jpg" alt="Icon" fill className="object-cover" />
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-serif font-bold text-white text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-serif font-bold text-white text-base tracking-wide">
                   HayalMest Garson
                 </span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400" />
               </div>
-              <div className="text-[11px] text-gold font-medium">
-                {waiterName}
+              <div className="text-xs text-gold font-medium flex items-center gap-1">
+                <span>Personel:</span>
+                <span className="text-white font-semibold">{waiterName}</span>
               </div>
             </div>
           </div>
 
-          {/* Minimal Controls: Sound, Refresh, Logout */}
-          <div className="flex items-center gap-1.5">
+          {/* Quick Header Actions: Sound, Refresh, Logout */}
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => {
@@ -333,9 +380,9 @@ export default function WaiterPanelPage() {
                 setSoundEnabled(next);
                 if (next) playNotificationChime();
               }}
-              className={`p-2 rounded-xl border text-xs transition-all ${
+              className={`p-2.5 rounded-xl border text-xs transition-all ${
                 soundEnabled
-                  ? 'bg-gold/15 text-gold border-gold/40'
+                  ? 'bg-gold/15 text-gold border-gold/40 shadow-sm'
                   : 'bg-white/5 text-gray-500 border-white/10'
               }`}
               title={soundEnabled ? 'Sesli Uyarı Açık' : 'Ses Kapalı'}
@@ -346,8 +393,8 @@ export default function WaiterPanelPage() {
             <button
               type="button"
               onClick={() => fetchRequests(false)}
-              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 transition-colors"
-              title="Yenile"
+              className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 transition-colors"
+              title="Listeyi Yenile"
             >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-gold' : ''}`} />
             </button>
@@ -355,7 +402,7 @@ export default function WaiterPanelPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="p-2 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-300 transition-colors"
+              className="p-2.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-300 transition-colors"
               title="Çıkış Yap"
             >
               <LogOut className="w-4 h-4" />
@@ -364,18 +411,18 @@ export default function WaiterPanelPage() {
 
         </div>
 
-        {/* Push Notification Bar: Only shown if notification permission is NOT granted */}
+        {/* Lockscreen Push Permission Banner (Only shown if permission NOT granted) */}
         {pushStatus !== 'granted' && (
-          <div className="bg-gradient-to-r from-amber-950/90 via-[#231A12] to-amber-950/90 border-t border-amber-500/50 px-4 py-2 flex items-center justify-between text-xs animate-fadeIn">
-            <div className="flex items-center gap-2 text-amber-300 font-semibold text-xs">
+          <div className="bg-gradient-to-r from-amber-950/95 via-[#231A12] to-amber-950/95 border-t border-amber-500/50 px-4 py-2.5 flex items-center justify-between text-xs animate-fadeIn">
+            <div className="flex items-center gap-2 text-amber-200 font-semibold text-xs">
               <Vibrate className="w-4 h-4 text-amber-400 flex-shrink-0 animate-bounce" />
-              <span>Ekran kapalıyken titreşim al:</span>
+              <span>Ekran kapalıyken titreşim &amp; bildirim al:</span>
             </div>
             <button
               type="button"
               onClick={handleEnablePush}
               disabled={pushLoading}
-              className="px-3 py-1.5 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider shadow active:scale-95 transition-all"
+              className="px-3.5 py-1.5 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider shadow-md hover:brightness-110 active:scale-95 transition-all"
             >
               {pushLoading ? 'Açılıyor...' : 'İzin Ver'}
             </button>
@@ -387,59 +434,115 @@ export default function WaiterPanelPage() {
             {pushMsg}
           </div>
         )}
+
+        {/* 2. MODERN SEGMENTED TAB BAR (SADE VE TEK NOKTADAN YÖNETİM) */}
+        <div className="max-w-xl mx-auto px-4 py-2.5 bg-[#0E121B] border-t border-white/5">
+          <div className="grid grid-cols-3 gap-1.5 bg-[#161B26] p-1 rounded-2xl border border-white/10 text-xs">
+            
+            {/* Tab 1: Bekleyen Masalar */}
+            <button
+              type="button"
+              onClick={() => setViewTab('pending')}
+              className={`py-2.5 px-2 rounded-xl font-bold transition-all flex items-center justify-center gap-1.5 ${
+                viewTab === 'pending'
+                  ? 'bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-900/40'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Bell className="w-3.5 h-3.5" />
+              <span>Bekleyen</span>
+              {pendingRequests.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-white text-red-600 text-[11px] font-mono font-bold">
+                  {pendingRequests.length}
+                </span>
+              )}
+            </button>
+
+            {/* Tab 2: Geçmiş */}
+            <button
+              type="button"
+              onClick={() => setViewTab('completed')}
+              className={`py-2.5 px-2 rounded-xl font-bold transition-all flex items-center justify-center gap-1.5 ${
+                viewTab === 'completed'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/40'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Geçmiş</span>
+              <span className="text-[11px] opacity-75 font-mono">
+                ({completedRequests.length})
+              </span>
+            </button>
+
+            {/* Tab 3: Ayarlar & Test */}
+            <button
+              type="button"
+              onClick={() => setViewTab('settings')}
+              className={`py-2.5 px-2 rounded-xl font-bold transition-all flex items-center justify-center gap-1.5 ${
+                viewTab === 'settings'
+                  ? 'bg-gold text-black shadow-md shadow-gold/30'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span>Ayarlar</span>
+            </button>
+
+          </div>
+        </div>
       </header>
 
-      {/* 2. MAIN APP CONTENT (SADE, FERAH VE ANLAŞILIR) */}
-      <main className="max-w-md mx-auto w-full px-3.5 py-3.5 flex-1 space-y-3 pb-24">
+      {/* 3. MAIN CONTENT AREA */}
+      <main className="max-w-xl mx-auto w-full px-4 py-4 flex-1 space-y-4 pb-12">
         
-        {/* VIEW TAB 1: ÇAĞRILAR (PENDING CALLS) */}
+        {/* VIEW TAB 1: BEKLEYEN MASA ÇAĞRILARI */}
         {viewTab === 'pending' && (
-          <div className="space-y-3 animate-fadeIn">
+          <div className="space-y-4 animate-fadeIn">
             
-            {/* Simple Segment Switcher */}
-            <div className="flex items-center justify-between bg-[#121620] p-1 rounded-2xl border border-meyhane-border text-xs">
-              <button
-                type="button"
-                onClick={() => setViewTab('pending')}
-                className="flex-1 py-2.5 rounded-xl font-bold transition-all flex items-center justify-center gap-1.5 bg-red-600 text-white shadow-md shadow-red-600/30"
-              >
-                <span>Bekleyen Masalar</span>
-                {pendingRequests.length > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-black/40 text-white text-xs font-mono font-bold">
-                    {pendingRequests.length}
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setViewTab('completed')}
-                className="flex-1 py-2.5 rounded-xl font-semibold transition-all text-gray-400 hover:text-white"
-              >
-                <span>Geçmiş ({completedRequests.length})</span>
-              </button>
-            </div>
-
-            {/* List of Pending Calls */}
             {loading ? (
-              <div className="text-center py-16 space-y-2">
-                <RefreshCw className="w-8 h-8 text-gold animate-spin mx-auto" />
-                <p className="text-xs text-gray-400">Çağrılar kontrol ediliyor...</p>
+              <div className="text-center py-20 space-y-3">
+                <RefreshCw className="w-9 h-9 text-gold animate-spin mx-auto" />
+                <p className="text-sm text-gray-400 font-medium">Masa çağrıları kontrol ediliyor...</p>
               </div>
             ) : pendingRequests.length === 0 ? (
-              <div className="rounded-3xl p-10 text-center border border-meyhane-border/70 space-y-3 bg-[#121620]/90 shadow-xl my-6">
-                <div className="w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto">
-                  <CheckCircle className="w-8 h-8" />
+              
+              /* ALL TABLES SERVED - WARM BEAUTIFUL EMPTY STATE */
+              <div className="rounded-3xl p-8 sm:p-10 text-center border border-gold/30 space-y-4 bg-gradient-to-b from-[#141926] to-[#0E121B] shadow-2xl my-4">
+                <div className="w-20 h-20 rounded-full bg-emerald-500/15 border-2 border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto shadow-inner">
+                  <CheckCircle className="w-10 h-10" />
                 </div>
-                <h3 className="text-lg font-serif font-bold text-white">
-                  Tüm Masalar Memnun
-                </h3>
-                <p className="text-xs text-gray-400 max-w-xs mx-auto leading-relaxed">
-                  Şu an bekleyen aktif bir masa çağrısı yok. Masadan garson veya hesap istendiğinde telefonunuz titreyecektir.
-                </p>
+                <div className="space-y-1">
+                  <h3 className="text-xl font-serif font-bold text-white tracking-wide">
+                    Tüm Masalar Servis Aldı
+                  </h3>
+                  <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+                    Şu anda bekleyen aktif bir masa çağrısı bulunmuyor.
+                  </p>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-black/40 border border-white/10 text-xs text-gray-300 flex items-center justify-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping flex-shrink-0" />
+                  <span>Canlı Dinleniyor: Masadan çağrı geldiğinde telefonunuz titreyecektir.</span>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleTestPushNotification}
+                    disabled={pushLoading}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gold/15 hover:bg-gold/25 border border-gold/40 text-gold text-xs font-bold transition-all"
+                  >
+                    <Bell className="w-4 h-4" />
+                    <span>Titreşim &amp; Bildirimi Test Et</span>
+                  </button>
+                </div>
               </div>
+
             ) : (
-              <div className="space-y-3">
+
+              /* ACTIVE CALL CARDS */
+              <div className="space-y-4">
                 {pendingRequests.map((req) => {
                   const isOrder = req.type === 'order';
                   const isBill = req.type === 'bill';
@@ -452,48 +555,54 @@ export default function WaiterPanelPage() {
                   return (
                     <div
                       key={req.id}
-                      className={`rounded-3xl p-4 sm:p-5 border transition-all relative flex flex-col justify-between shadow-2xl ${
+                      className={`rounded-3xl p-5 border transition-all relative flex flex-col justify-between shadow-2xl ${
                         isUrgent
-                          ? 'bg-gradient-to-b from-red-950/60 via-[#1C1215] to-[#121620] border-red-500 ring-2 ring-red-500/70 shadow-red-950/50'
+                          ? 'bg-gradient-to-b from-red-950/70 via-[#1F1318] to-[#121620] border-red-500 ring-2 ring-red-500/70 shadow-red-950/50'
                           : isOrder
-                          ? 'bg-gradient-to-b from-[#241A12] via-[#1A151D] to-[#121620] border-amber-500/80 shadow-amber-950/30'
+                          ? 'bg-gradient-to-b from-[#2B1B15] via-[#1C1722] to-[#121620] border-amber-500/80 shadow-amber-950/40'
                           : isBill
-                          ? 'bg-gradient-to-b from-[#12241A] via-[#121620] to-[#121620] border-emerald-500/80'
-                          : 'bg-gradient-to-b from-[#262012] via-[#161A24] to-[#121620] border-gold/70'
+                          ? 'bg-gradient-to-b from-[#13281E] via-[#121922] to-[#121620] border-emerald-500/80 shadow-emerald-950/40'
+                          : 'bg-gradient-to-b from-[#2B2315] via-[#171B26] to-[#121620] border-gold/70 shadow-gold/20'
                       }`}
                     >
-                      {/* Top Header: Giant Table Name & Type */}
-                      <div className="flex items-start justify-between gap-2 border-b border-white/10 pb-3 mb-3">
+                      {/* Top Row: Giant Table Name & Request Type Badge */}
+                      <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3.5 mb-3.5">
+                        
                         <div>
-                          <div className="flex items-center gap-2">
-                            <span className="px-3.5 py-1 rounded-xl bg-gold text-black text-base sm:text-lg font-bold font-serif tracking-wide shadow">
+                          {/* Giant Table Name */}
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-2xl sm:text-3xl font-bold font-serif text-white tracking-wide">
                               {req.tableName}
                             </span>
                             {req.sectionName && (
-                              <span className="text-xs text-gray-300 font-medium">
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-gold bg-gold/15 border border-gold/30 px-2.5 py-0.5 rounded-lg">
+                                <MapPin className="w-3 h-3 text-gold" />
                                 {req.sectionName}
                               </span>
                             )}
                           </div>
                           
-                          <div className="flex items-center gap-1.5 text-xs text-gray-400 mt-1.5">
+                          {/* Time & Urgency */}
+                          <div className="flex items-center gap-2 text-xs text-gray-400 mt-2">
                             <Clock className="w-3.5 h-3.5 text-gold" />
-                            <span>{createdTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="font-mono text-gray-300">
+                              {createdTime.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
                             <span>•</span>
                             <span className={isUrgent ? 'text-red-400 font-bold animate-pulse' : 'text-gray-300'}>
                               {elapsedMinutes === 0 ? 'Az önce' : `${elapsedMinutes} dk önce`}
                             </span>
                             {isUrgent && (
-                              <span className="px-2 py-0.2 rounded bg-red-600 text-white font-bold text-[10px]">
+                              <span className="px-2 py-0.5 rounded-md bg-red-600 text-white font-bold text-[10px] animate-pulse">
                                 ACİL BEKLİYOR!
                               </span>
                             )}
                           </div>
                         </div>
 
-                        {/* Request Title Badge */}
-                        <div className="text-right">
-                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider shadow ${
+                        {/* Request Type Badge */}
+                        <div className="text-right flex-shrink-0">
+                          <span className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-bold uppercase tracking-wider shadow-md ${
                             isOrder
                               ? 'bg-amber-500 text-black'
                               : isBill
@@ -504,30 +613,31 @@ export default function WaiterPanelPage() {
                           }`}>
                             {isOrder && <Flame className="w-4 h-4" />}
                             {isBill && <CreditCard className="w-4 h-4" />}
-                            {!isOrder && !isBill && <Bell className="w-4 h-4" />}
+                            {isWater && <Droplets className="w-4 h-4" />}
+                            {!isOrder && !isBill && !isWater && <Bell className="w-4 h-4" />}
                             <span>{req.title}</span>
                           </span>
                         </div>
                       </div>
 
-                      {/* Middle Body: Orders or Notes */}
-                      <div className="space-y-2.5 pb-3">
+                      {/* Middle Row: Order Details or Guest Note */}
+                      <div className="space-y-3 pb-4">
                         {isOrder && req.items && req.items.length > 0 && (
-                          <div className="p-3 rounded-2xl bg-black/50 border border-amber-500/40 text-xs space-y-2">
-                            <div className="text-xs font-bold uppercase text-amber-300 flex items-center justify-between border-b border-white/10 pb-1.5">
-                              <span>Sipariş Listesi ({req.items.length} Çeşit):</span>
+                          <div className="p-3.5 rounded-2xl bg-black/60 border border-amber-500/40 text-xs space-y-2">
+                            <div className="text-xs font-bold uppercase text-amber-300 flex items-center justify-between border-b border-white/10 pb-2">
+                              <span>Sipariş Edilen Ürünler ({req.items.length} Çeşit):</span>
                               {req.totalAmount && (
                                 <span className="font-mono text-white text-sm font-bold">
                                   {req.totalAmount.toLocaleString('tr-TR')} ₺
                                 </span>
                               )}
                             </div>
-                            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                               {req.items.map((it, idx) => (
                                 <div key={idx} className="flex justify-between items-center text-xs text-gray-200">
                                   <div className="flex items-center gap-2">
-                                    <span className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-300 font-mono font-bold text-xs flex items-center justify-center">
-                                      {it.quantity}
+                                    <span className="w-6 h-6 rounded-lg bg-amber-500/25 text-amber-300 font-mono font-bold text-xs flex items-center justify-center border border-amber-500/40">
+                                      {it.quantity}x
                                     </span>
                                     <span className="font-semibold text-white">{it.name}</span>
                                   </div>
@@ -543,21 +653,25 @@ export default function WaiterPanelPage() {
                         )}
 
                         {req.note && (
-                          <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/40 text-xs">
-                            <span className="text-[11px] text-amber-400 font-bold uppercase block">Masa Notu:</span>
-                            <span className="text-amber-200 font-medium text-xs">&ldquo;{req.note}&rdquo;</span>
+                          <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-500/50 text-xs">
+                            <span className="text-[11px] text-amber-400 font-bold uppercase tracking-wider block mb-0.5">
+                              💬 Misafir Notu:
+                            </span>
+                            <span className="text-amber-100 font-medium text-xs leading-relaxed">
+                              &ldquo;{req.note}&rdquo;
+                            </span>
                           </div>
                         )}
                       </div>
 
-                      {/* Giant, Fool-proof Action Button */}
+                      {/* Bottom Row: Giant Thumb-friendly Dismiss Button */}
                       <button
                         type="button"
                         disabled={actionLoadingId === req.id}
                         onClick={() => handleCompleteRequest(req.id)}
-                        className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl active:scale-95 transition-all"
+                        className="w-full py-4 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-600 hover:brightness-110 active:scale-[0.98] text-white font-bold text-sm sm:text-base uppercase tracking-wider flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-950/60 transition-all border border-emerald-400/50"
                       >
-                        <Check className="w-5 h-5 stroke-[3]" />
+                        <Check className="w-6 h-6 stroke-[3]" />
                         <span>MASAYA GİDİLDİ (KAPAT)</span>
                       </button>
 
@@ -570,48 +684,53 @@ export default function WaiterPanelPage() {
           </div>
         )}
 
-        {/* VIEW TAB 2: GEÇMİŞ (COMPLETED CALLS) */}
+        {/* VIEW TAB 2: GEÇMİŞ (TAMAMLANAN ÇAĞRILAR) */}
         {viewTab === 'completed' && (
-          <div className="space-y-3 animate-fadeIn">
-            <div className="flex items-center justify-between bg-[#121620] p-1 rounded-2xl border border-meyhane-border text-xs">
-              <button
-                type="button"
-                onClick={() => setViewTab('pending')}
-                className="flex-1 py-2.5 rounded-xl font-semibold transition-all text-gray-400 hover:text-white"
-              >
-                <span>Bekleyen ({pendingRequests.length})</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setViewTab('completed')}
-                className="flex-1 py-2.5 rounded-xl font-bold transition-all bg-emerald-600 text-white shadow"
-              >
-                <span>Tamamlananlar ({completedRequests.length})</span>
-              </button>
+          <div className="space-y-4 animate-fadeIn">
+            
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                Bugün Tamamlanan Masa Çağrıları
+              </span>
+              <span className="text-xs font-mono font-bold text-emerald-400">
+                Toplam: {completedRequests.length}
+              </span>
             </div>
 
             {completedRequests.length === 0 ? (
-              <div className="rounded-3xl p-10 text-center border border-meyhane-border/70 text-gray-400 text-xs bg-[#121620]">
+              <div className="rounded-3xl p-10 text-center border border-white/10 text-gray-400 text-xs bg-[#121620]">
                 Henüz tamamlanmış bir masa çağrısı bulunmuyor.
               </div>
             ) : (
-              <div className="space-y-2">
-                {completedRequests.slice(0, 20).map((req) => (
+              <div className="space-y-2.5">
+                {completedRequests.map((req) => (
                   <div
                     key={req.id}
-                    className="p-3 rounded-2xl bg-[#121620] border border-meyhane-border/60 flex items-center justify-between text-xs"
+                    className="p-3.5 rounded-2xl bg-[#121620] border border-white/10 flex items-center justify-between text-xs hover:border-gold/30 transition-all"
                   >
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-white font-serif">{req.tableName}</span>
-                        <span className="text-gray-400 text-[11px]">• {req.title}</span>
+                        <span className="font-bold text-white font-serif text-sm">
+                          {req.tableName}
+                        </span>
+                        <span className="text-gray-300 text-xs font-medium">
+                          • {req.title}
+                        </span>
                       </div>
-                      <div className="text-[10px] text-gray-500 mt-0.5">
-                        {req.completedAt ? new Date(req.completedAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : ''} tarihinde tamamlandı
+                      <div className="text-[11px] text-gray-400 mt-1 flex items-center gap-1.5 font-mono">
+                        <Clock className="w-3 h-3 text-gold" />
+                        <span>
+                          {req.completedAt ? new Date(req.completedAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                        {req.completedBy && (
+                          <span className="text-gold font-sans font-semibold">
+                            ({req.completedBy})
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 font-bold text-[10px]">
+                    <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold text-[11px] flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" />
                       Tamamlandı
                     </span>
                   </div>
@@ -623,65 +742,66 @@ export default function WaiterPanelPage() {
 
         {/* VIEW TAB 3: AYARLAR & TEST */}
         {viewTab === 'settings' && (
-          <div className="space-y-3 animate-fadeIn">
-            <div className="p-4 rounded-3xl bg-[#121620] border border-gold/40 shadow-xl space-y-3 text-center">
+          <div className="space-y-4 animate-fadeIn">
+            
+            <div className="p-5 rounded-3xl bg-[#121620] border border-gold/40 shadow-xl space-y-3 text-center">
               <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-gold mx-auto relative shadow-lg bg-black">
                 <Image src="/icons/garson-icon.jpg" alt="Icon" fill className="object-cover" />
               </div>
               <div>
-                <h3 className="font-serif font-bold text-white text-base">HayalMest Garson Paneli</h3>
-                <p className="text-xs text-gold font-medium">Giriş Yapan: {waiterName}</p>
+                <h3 className="font-serif font-bold text-white text-lg">HayalMest Garson Paneli</h3>
+                <p className="text-xs text-gold font-medium mt-0.5">Giriş Yapan: {waiterName}</p>
               </div>
             </div>
 
             {/* Notification & Vibration Test Card */}
-            <div className="p-4 rounded-2xl bg-[#121620] border border-meyhane-border space-y-3 text-xs">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+            <div className="p-5 rounded-2xl bg-[#121620] border border-white/10 space-y-3 text-xs">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
                 <div className="flex items-center gap-2">
                   <Vibrate className="w-4 h-4 text-gold" />
-                  <span className="font-semibold text-white">Kilit Ekranı &amp; Titreşim</span>
+                  <span className="font-semibold text-white text-sm">Kilit Ekranı &amp; Titreşim</span>
                 </div>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                  pushStatus === 'granted' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
+                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                  pushStatus === 'granted' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                 }`}>
                   {pushStatus === 'granted' ? 'Açık' : 'Kapalı'}
                 </span>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <button
                   type="button"
                   onClick={handleTestPushNotification}
                   disabled={pushLoading}
-                  className="w-full py-3 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg active:scale-95"
+                  className="w-full py-3.5 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"
                 >
                   <Bell className="w-4 h-4" />
                   <span>Kilit Ekranı Bildirimini Test Et</span>
                 </button>
-                <p className="text-[11px] text-gray-400 text-center">
-                  Butona bastıktan sonra telefonunuzu kilitleyin; telefon titreyip &ldquo;MASA 4 GARSON İSTİYOR&rdquo; bildirimi gösterecektir.
+                <p className="text-[11px] text-gray-400 text-center leading-relaxed">
+                  Butona bastıktan sonra telefonunuzu kilitleyin; telefonunuz titreyip &ldquo;MASA 4 GARSON İSTİYOR&rdquo; bildirimi gösterecektir.
                 </p>
               </div>
 
               {pushMsg && (
-                <div className="p-2.5 rounded-xl bg-emerald-950 text-emerald-300 text-center text-xs font-bold">
+                <div className="p-3 rounded-xl bg-emerald-950 border border-emerald-500/50 text-emerald-300 text-center text-xs font-bold">
                   {pushMsg}
                 </div>
               )}
             </div>
 
             {/* iPhone / PWA Install Guide */}
-            <div className="p-4 rounded-2xl bg-[#121620] border border-meyhane-border space-y-2.5 text-xs">
-              <div className="flex items-center gap-2 font-semibold text-white">
+            <div className="p-5 rounded-2xl bg-[#121620] border border-white/10 space-y-3 text-xs">
+              <div className="flex items-center gap-2 font-semibold text-white text-sm">
                 <Smartphone className="w-4 h-4 text-gold" />
                 <span>iPhone / Telefona Yükleme Rehberi</span>
               </div>
               <button
                 type="button"
                 onClick={() => setShowIosGuide(true)}
-                className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs flex items-center justify-center gap-1.5"
+                className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
               >
-                <span>Nasıl Uygulama Yapılır? (Rehberi Gör)</span>
+                <span>Nasıl Uygulama Olarak Eklenir? (Rehberi Gör)</span>
               </button>
             </div>
 
@@ -689,7 +809,7 @@ export default function WaiterPanelPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="w-full py-3 rounded-2xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+              className="w-full py-3.5 rounded-2xl bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors"
             >
               <LogOut className="w-4 h-4" />
               <span>Garson Oturumunu Kapat</span>
@@ -698,46 +818,6 @@ export default function WaiterPanelPage() {
         )}
 
       </main>
-
-      {/* 3. MINIMAL 2-TAB BOTTOM DOCK (HERKESİN KULLANABİLECEĞİ KADAR BASİT) */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#121620]/95 backdrop-blur-2xl border-t border-gold/40 shadow-[0_-8px_25px_rgba(0,0,0,0.85)]">
-        <div className="max-w-md mx-auto grid grid-cols-2 px-4 py-2 text-center">
-          
-          {/* Tab 1: Çağrılar */}
-          <button
-            type="button"
-            onClick={() => setViewTab('pending')}
-            className={`py-2 rounded-2xl transition-all flex flex-col items-center justify-center relative ${
-              viewTab === 'pending' || viewTab === 'completed' ? 'text-gold' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <div className={`p-1 rounded-xl transition-all ${viewTab === 'pending' ? 'bg-gold/15 scale-110' : ''}`}>
-              <Bell className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] font-bold mt-0.5">Masa Çağrıları</span>
-            {pendingRequests.length > 0 && (
-              <span className="absolute top-0.5 right-10 px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-bold font-mono animate-bounce">
-                {pendingRequests.length}
-              </span>
-            )}
-          </button>
-
-          {/* Tab 2: Ayarlar & Test */}
-          <button
-            type="button"
-            onClick={() => setViewTab('settings')}
-            className={`py-2 rounded-2xl transition-all flex flex-col items-center justify-center ${
-              viewTab === 'settings' ? 'text-gold' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <div className={`p-1 rounded-xl transition-all ${viewTab === 'settings' ? 'bg-gold/15 scale-110' : ''}`}>
-              <Settings className="w-5 h-5" />
-            </div>
-            <span className="text-[11px] font-bold mt-0.5">Ayarlar &amp; Test</span>
-          </button>
-
-        </div>
-      </nav>
 
       {/* 4. IOS INSTALL GUIDE MODAL */}
       {showIosGuide && (
@@ -751,40 +831,28 @@ export default function WaiterPanelPage() {
               <button
                 type="button"
                 onClick={() => setShowIosGuide(false)}
-                className="p-1 rounded-lg text-gray-400 hover:text-white"
+                className="p-1 text-gray-400 hover:text-white"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs text-gray-200">
-              <div className="flex items-start gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10">
-                <span className="w-6 h-6 rounded-full bg-gold/20 text-gold font-bold flex items-center justify-center flex-shrink-0 text-xs">
-                  1
-                </span>
-                <div>
-                  <strong className="text-white block">Paylaş Butonuna Basın</strong>
-                  <span className="text-gray-400 text-[11px]">Safari tarayıcısının altındaki Paylaş (📤) simgesine dokunun.</span>
+            <div className="text-xs text-gray-300 space-y-3">
+              <p className="leading-relaxed">
+                Garson panelini gerçek bir mobil uygulama gibi kullanmak ve ekran kilitliyken titreşim almak için:
+              </p>
+              <div className="space-y-2 p-3 rounded-2xl bg-black/40 border border-white/10 text-[11px]">
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-gold/20 text-gold font-bold flex items-center justify-center flex-shrink-0">1</span>
+                  <span>Safari tarayıcısında alt kısımdaki <strong>Paylaş (Yukarı Ok)</strong> butonuna dokunun.</span>
                 </div>
-              </div>
-
-              <div className="flex items-start gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10">
-                <span className="w-6 h-6 rounded-full bg-gold/20 text-gold font-bold flex items-center justify-center flex-shrink-0 text-xs">
-                  2
-                </span>
-                <div>
-                  <strong className="text-white block">&ldquo;Ana Ekrana Ekle&rdquo;yi Seçin</strong>
-                  <span className="text-gray-400 text-[11px]">Açılan menüden &ldquo;Ana Ekrana Ekle&rdquo; seçeneğine dokunup &ldquo;Ekle&rdquo; deyin.</span>
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-gold/20 text-gold font-bold flex items-center justify-center flex-shrink-0">2</span>
+                  <span>Açılan menüde aşağı kaydırıp <strong>&ldquo;Ana Ekrana Ekle&rdquo;</strong> seçeneğini seçin.</span>
                 </div>
-              </div>
-
-              <div className="flex items-start gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10">
-                <span className="w-6 h-6 rounded-full bg-gold/20 text-gold font-bold flex items-center justify-center flex-shrink-0 text-xs">
-                  3
-                </span>
-                <div>
-                  <strong className="text-white block">Bildirimleri Onaylayın</strong>
-                  <span className="text-gray-400 text-[11px]">Ana ekrandaki HayalMest Garson simgesine tıklayın ve bildirim iznine izin verin.</span>
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-gold/20 text-gold font-bold flex items-center justify-center flex-shrink-0">3</span>
+                  <span>Ana ekranınıza gelen <strong>HayalMest Garson</strong> logosuna dokunarak açın.</span>
                 </div>
               </div>
             </div>
@@ -792,7 +860,7 @@ export default function WaiterPanelPage() {
             <button
               type="button"
               onClick={() => setShowIosGuide(false)}
-              className="w-full py-2.5 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider shadow"
+              className="w-full py-2.5 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider"
             >
               Anladım
             </button>
