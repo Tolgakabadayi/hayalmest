@@ -28,10 +28,12 @@ import {
   Compass,
   Sliders,
   Eye,
-  X
+  X,
+  QrCode
 } from 'lucide-react';
 import { TableItem, TableSection, ALL_TABLES, VENUE_SECTIONS } from '@/data/tablesData';
 import { VenueElement } from '@/lib/tablesStorage';
+import TableQrCodeModal from '@/components/TableQrCodeModal';
 
 interface FloorPlanDesignerProps {
   initialTables: TableItem[];
@@ -80,6 +82,7 @@ export default function FloorPlanDesigner({
 
   // Selection state
   const [selectedItem, setSelectedItem] = useState<{ type: 'table' | 'element'; id: string } | null>(null);
+  const [qrTableTarget, setQrTableTarget] = useState<TableItem | null>(null);
 
   // Hovered item for instant magnified tooltip
   const [hoveredTable, setHoveredTable] = useState<TableItem | null>(null);
@@ -908,7 +911,16 @@ export default function FloorPlanDesigner({
             </div>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 space-y-2">
+            <button
+              type="button"
+              onClick={() => setQrTableTarget(currentTable)}
+              className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-gold/20 via-gold/10 to-gold/20 hover:from-gold/30 hover:to-gold/20 text-gold border border-gold/40 font-semibold text-xs flex items-center justify-center gap-2 transition-all shadow-md group"
+            >
+              <QrCode className="w-4 h-4 text-gold group-hover:scale-110 transition-transform" />
+              <span>Masaya Özel Canlı QR Menü &amp; Kod</span>
+            </button>
+
             <button
               type="button"
               disabled={isLocked}
@@ -2094,6 +2106,14 @@ export default function FloorPlanDesigner({
           </div>
         </div>
       </div>
+
+      {/* Table-specific QR Code Modal */}
+      {qrTableTarget && (
+        <TableQrCodeModal
+          table={qrTableTarget}
+          onClose={() => setQrTableTarget(null)}
+        />
+      )}
 
     </div>
   );

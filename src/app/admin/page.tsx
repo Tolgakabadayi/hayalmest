@@ -45,7 +45,8 @@ import {
   BarChart2,
   Menu,
   ExternalLink,
-  ChevronUp
+  ChevronUp,
+  QrCode
 } from 'lucide-react';
 import { Reservation } from '@/lib/storage';
 import { CustomerProfile } from '@/lib/customersStorage';
@@ -57,6 +58,8 @@ import ReservationDetailModal from '@/components/ReservationDetailModal';
 import FloorPlanDesigner from '@/components/FloorPlanDesigner';
 import InteractiveFloorPlan from '@/components/InteractiveFloorPlan';
 import { VenueElement } from '@/lib/tablesStorage';
+import ServiceRequestsLiveFeed from '@/components/ServiceRequestsLiveFeed';
+import TableQrCodeModal from '@/components/TableQrCodeModal';
 
 export default function AdminPage() {
   const router = useRouter();
@@ -94,6 +97,7 @@ export default function AdminPage() {
   // Dynamic tables & elements
   const [tablesList, setTablesList] = useState<TableItem[]>(ALL_TABLES);
   const [venueElements, setVenueElements] = useState<VenueElement[]>([]);
+  const [qrModalTable, setQrModalTable] = useState<TableItem | null>(null);
 
   // Events state
   const [events, setEvents] = useState<StageEvent[]>([]);
@@ -575,6 +579,9 @@ export default function AdminPage() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* Live Waiter & Table Service Calls Feed */}
+          <ServiceRequestsLiveFeed />
+
           <button
             onClick={() => setShowAddResModal(true)}
             className="px-3 sm:px-4 py-2 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider hover:brightness-110 flex items-center gap-1.5 shadow-md shadow-gold/20 whitespace-nowrap"
@@ -2760,6 +2767,18 @@ export default function AdminPage() {
                 )}
               </div>
 
+              {/* Table QR Menu & Live Waiter Caller Action */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setQrModalTable(selectedFloorTable)}
+                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-gold/20 via-gold/10 to-gold/20 hover:from-gold/30 hover:to-gold/20 text-gold border border-gold/40 font-semibold text-xs flex items-center justify-center gap-2 transition-all shadow-md group"
+                >
+                  <QrCode className="w-4 h-4 text-gold group-hover:scale-110 transition-transform" />
+                  <span>Masaya Özel Canlı QR Menü &amp; Kod (İndir / Yazdır)</span>
+                </button>
+              </div>
+
               {/* Table Management Actions */}
               <div className="flex items-center justify-between pt-2 border-t border-meyhane-border/70 text-xs">
                 <button
@@ -2803,6 +2822,14 @@ export default function AdminPage() {
           </div>
         );
       })()}
+
+      {/* Table-specific QR Code Modal */}
+      {qrModalTable && (
+        <TableQrCodeModal
+          table={qrModalTable}
+          onClose={() => setQrModalTable(null)}
+        />
+      )}
 
       {/* CUSTOMER HISTORY & PROFILE MODAL */}
       {selectedCustomerModal && (

@@ -24,13 +24,16 @@ import {
   Layers,
   ChevronRight,
   Wine,
-  LogOut
+  LogOut,
+  QrCode
 } from 'lucide-react';
 import { Reservation } from '@/lib/storage';
 import { ALL_TABLES, VENUE_SECTIONS, TableItem } from '@/data/tablesData';
 import { formatTableDisplay, setRegisteredTables } from '@/lib/formatters';
 import InteractiveFloorPlan from '@/components/InteractiveFloorPlan';
 import { VenueElement } from '@/lib/tablesStorage';
+import ServiceRequestsLiveFeed from '@/components/ServiceRequestsLiveFeed';
+import TableQrCodeModal from '@/components/TableQrCodeModal';
 
 export default function HostPanelPage() {
   const router = useRouter();
@@ -55,6 +58,7 @@ export default function HostPanelPage() {
     guestCount: number;
     pnr: string;
   } | null>(null);
+  const [qrModalTable, setQrModalTable] = useState<TableItem | null>(null);
 
   // Table change state
   const [changingReservation, setChangingReservation] = useState<Reservation | null>(null);
@@ -251,6 +255,9 @@ export default function HostPanelPage() {
                 <span>2D Canlı Kroki</span>
               </button>
             </div>
+
+            {/* Live Service & Waiter Call Feed */}
+            <ServiceRequestsLiveFeed />
 
             <button
               onClick={fetchReservations}
@@ -772,11 +779,36 @@ export default function HostPanelPage() {
 
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-meyhane-border/70">
+              <button
+                type="button"
+                onClick={() => {
+                  const targetTbl = tablesList.find(t => t.id === highlightedTable.tableId || highlightedTable.tableId?.includes(t.id));
+                  if (targetTbl) {
+                    setQrModalTable(targetTbl);
+                  } else {
+                    setQrModalTable({
+                      id: highlightedTable.tableId,
+                      number: highlightedTable.tableName,
+                      capacity: highlightedTable.guestCount,
+                      minGuests: 1,
+                      sectionId: (highlightedTable.sectionId as any) || 'salon',
+                      posX: 50,
+                      posY: 50,
+                      adjacentWith: []
+                    });
+                  }
+                }}
+                className="px-4 py-2.5 rounded-xl bg-gold/15 hover:bg-gold/25 text-gold border border-gold/40 text-xs font-semibold flex items-center gap-2 transition-all shadow"
+              >
+                <QrCode className="w-4 h-4 text-gold" />
+                <span>Masaya Özel QR Menü Kodunu Gör</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setHighlightedTable(null)}
-                className="px-6 py-2.5 rounded-xl bg-gold text-black font-semibold text-xs uppercase tracking-wider hover:brightness-110"
+                className="px-6 py-2.5 rounded-xl bg-gold text-black font-semibold text-xs uppercase tracking-wider hover:brightness-110 ml-auto"
               >
                 Anladım / Kapat
               </button>
@@ -784,6 +816,14 @@ export default function HostPanelPage() {
 
           </div>
         </div>
+      )}
+
+      {/* Table-specific QR Code Modal */}
+      {qrModalTable && (
+        <TableQrCodeModal
+          table={qrModalTable}
+          onClose={() => setQrModalTable(null)}
+        />
       )}
 
       {/* 5. TABLE SWITCH MODAL */}
