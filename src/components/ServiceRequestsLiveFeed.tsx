@@ -149,9 +149,9 @@ export default function ServiceRequestsLiveFeed() {
         <>
           <div 
             onClick={() => setIsOpen(false)}
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" 
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs" 
           />
-          <div className="absolute right-0 top-full mt-2 z-50 w-80 sm:w-96 luxury-card rounded-2xl p-4 border border-gold/40 shadow-2xl bg-[#141824]/98 space-y-3 animate-fadeIn">
+          <div className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-16 sm:top-full mt-2 z-50 sm:w-96 max-h-[85vh] sm:max-h-[80vh] flex flex-col luxury-card rounded-2xl p-4 border border-gold/40 shadow-2xl bg-[#141824]/98 space-y-3 animate-fadeIn">
             <div className="flex items-center justify-between border-b border-meyhane-border/70 pb-2.5">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-gold" />
@@ -169,7 +169,7 @@ export default function ServiceRequestsLiveFeed() {
             </div>
 
             {/* Pending Requests List */}
-            <div className="space-y-2 max-h-72 overflow-y-auto scrollbar-none">
+            <div className="space-y-2 flex-1 max-h-[55vh] sm:max-h-80 overflow-y-auto scrollbar-none pr-0.5">
               {pendingRequests.length > 0 ? (
                 pendingRequests.map(req => (
                   <div

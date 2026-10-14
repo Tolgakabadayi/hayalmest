@@ -566,41 +566,55 @@ export default function AdminPage() {
   const totalGuestsAllCustomers = customers.reduce((sum, c) => sum + c.totalGuests, 0);
 
   return (
-    <div className={`${activeTab === 'designer' ? 'max-w-[1850px]' : 'max-w-7xl'} mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5 transition-all duration-300 pb-28 sm:pb-32`}>
+    <div className={`${activeTab === 'designer' ? 'max-w-[1850px]' : 'max-w-7xl'} w-full max-w-full overflow-x-hidden mx-auto px-3 sm:px-6 lg:px-8 py-3.5 sm:py-6 space-y-4 sm:space-y-5 transition-all duration-300 pb-28 sm:pb-32`}>
       
-      {/* Top Header - Minimalist & Hamburger Centric */}
-      <div className="flex items-center justify-between gap-3 border-b border-meyhane-border/70 pb-3 sm:pb-4">
-        <div>
-          <div className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-gold font-semibold">
-            <ShieldCheck className="w-3.5 h-3.5 text-gold" />
-            <span>HayalMest Yönetim Paneli</span>
+      {/* Top Header - Mobile-first & Zero Horizontal Overflow */}
+      <div className="border-b border-meyhane-border/70 pb-3 sm:pb-4 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] uppercase tracking-wider text-gold font-semibold truncate">
+              <ShieldCheck className="w-3.5 h-3.5 text-gold flex-shrink-0" />
+              <span className="truncate">HayalMest Yönetim Paneli</span>
+            </div>
+            <h1 className="text-lg sm:text-2xl font-bold font-serif text-white tracking-wide truncate">
+              Kontrol Masası
+            </h1>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold font-serif text-white tracking-wide">
-            Kontrol &amp; Karşılama Masası
-          </h1>
+
+          <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
+            {/* Live Waiter & Table Service Calls Feed */}
+            <ServiceRequestsLiveFeed />
+
+            {/* Desktop-only Rezervasyon button */}
+            <button
+              onClick={() => setShowAddResModal(true)}
+              className="hidden sm:inline-flex px-3 sm:px-4 py-2 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider hover:brightness-110 items-center gap-1.5 shadow-md shadow-gold/20 whitespace-nowrap"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Rezervasyon Ekle</span>
+            </button>
+
+            {/* Hamburger Menu Trigger Button */}
+            <button
+              type="button"
+              onClick={() => setShowHamburgerMenu(true)}
+              className="p-2 sm:px-3 sm:py-2 rounded-xl bg-meyhane-surface hover:bg-gold/15 border border-gold/40 text-gold flex items-center gap-1.5 transition-all shadow-md"
+              title="Yönetim Menüsü"
+            >
+              <Menu className="w-5 h-5 text-gold" />
+              <span className="hidden sm:inline text-xs font-semibold">Menü</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-2.5">
-          {/* Live Waiter & Table Service Calls Feed */}
-          <ServiceRequestsLiveFeed />
-
+        {/* Mobile Full-width Action Button */}
+        <div className="sm:hidden">
           <button
             onClick={() => setShowAddResModal(true)}
-            className="px-3 sm:px-4 py-2 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider hover:brightness-110 flex items-center gap-1.5 shadow-md shadow-gold/20 whitespace-nowrap"
+            className="w-full py-2.5 px-4 rounded-xl bg-gold text-black font-bold text-xs uppercase tracking-wider hover:brightness-110 flex items-center justify-center gap-1.5 shadow-md shadow-gold/20"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>+ Rezervasyon</span>
-          </button>
-
-          {/* Hamburger Menu Trigger Button */}
-          <button
-            type="button"
-            onClick={() => setShowHamburgerMenu(true)}
-            className="p-2 sm:px-3 sm:py-2 rounded-xl bg-meyhane-surface hover:bg-gold/15 border border-gold/40 text-gold flex items-center gap-1.5 transition-all shadow-md"
-            title="Yönetim Menüsü"
-          >
-            <Menu className="w-5 h-5 text-gold" />
-            <span className="hidden sm:inline text-xs font-semibold">Menü</span>
+            <Plus className="w-4 h-4" />
+            <span>Yeni Rezervasyon Ekle</span>
           </button>
         </div>
       </div>
@@ -885,23 +899,23 @@ export default function AdminPage() {
           </div>
 
           {/* Filters Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="relative flex-1 sm:w-72">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="relative w-full sm:w-72">
               <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 placeholder="İsim, telefon veya PNR..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-meyhane-surface border border-meyhane-border pl-9 pr-3 py-2 rounded-xl text-xs text-white focus:border-gold focus:outline-none"
+                className="w-full bg-meyhane-surface border border-meyhane-border pl-9 pr-3 py-2.5 rounded-xl text-xs text-white focus:border-gold focus:outline-none"
               />
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-meyhane-surface border border-meyhane-border px-3 py-2 rounded-xl text-xs text-white focus:border-gold focus:outline-none cursor-pointer"
+                className="w-full sm:w-auto bg-meyhane-surface border border-meyhane-border px-3 py-2.5 rounded-xl text-xs text-white focus:border-gold focus:outline-none cursor-pointer"
               >
                 <option value="all">Tüm Durumlar</option>
                 <option value="pending">Onay Bekleyen</option>
@@ -913,7 +927,7 @@ export default function AdminPage() {
               <select
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="bg-meyhane-surface border border-meyhane-border px-3 py-2 rounded-xl text-xs text-white focus:border-gold focus:outline-none cursor-pointer"
+                className="w-full sm:w-auto bg-meyhane-surface border border-meyhane-border px-3 py-2.5 rounded-xl text-xs text-white focus:border-gold focus:outline-none cursor-pointer"
               >
                 <option value="all">Tüm Tarihler</option>
                 <option value="today">Sadece Bugün</option>
@@ -925,8 +939,145 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Table */}
-          <div className="luxury-card rounded-2xl border border-meyhane-border overflow-hidden shadow-xl">
+          {/* 1. MOBILE RESERVATION CARDS (sm:hidden) */}
+          <div className="block sm:hidden space-y-3">
+            {filtered.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 luxury-card rounded-2xl border border-meyhane-border">
+                Bu filtreye uygun rezervasyon bulunamadı.
+              </div>
+            ) : (
+              filtered.map((res) => {
+                const isToday = res.date === todayStr;
+                return (
+                  <div
+                    key={res.id}
+                    onClick={() => setSelectedReservationModal(res)}
+                    className="luxury-card rounded-2xl border border-meyhane-border hover:border-gold/50 p-4 space-y-3 shadow-lg active:scale-[0.99] transition-all bg-gradient-to-br from-meyhane-surface to-black/40"
+                  >
+                    {/* Card Top: PNR + Today badge + Status */}
+                    <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-xs text-gold">#{res.pnr}</span>
+                        {isToday && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">
+                            BUGÜN
+                          </span>
+                        )}
+                      </div>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        res.status === 'confirmed'
+                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          : res.status === 'pending'
+                          ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                          : res.status === 'seated'
+                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                          : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                      }`}>
+                        {res.status === 'confirmed' && 'Onaylandı'}
+                        {res.status === 'pending' && 'Onay Bekliyor'}
+                        {res.status === 'seated' && 'Masada'}
+                        {res.status === 'cancelled' && 'İptal'}
+                      </span>
+                    </div>
+
+                    {/* Card Body: Guest Name + Phone + Table Info */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <h3 className="font-bold text-white text-sm font-serif">{res.fullName}</h3>
+                        <span className="text-xs font-bold text-gold font-serif whitespace-nowrap">{res.guestCount} Kişi</span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs text-gray-300">
+                        <div className="flex items-center gap-1.5 text-gold font-medium truncate">
+                          <Utensils className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span className="truncate">{formatTableDisplay(res.tableId, res.sectionId, tablesList)}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-gray-400 text-[11px] flex-shrink-0">
+                          <Clock className="w-3 h-3 text-gold" />
+                          <span>{res.date} • {res.time}</span>
+                        </div>
+                      </div>
+
+                      {res.specialRequests && (
+                        <p className="text-[11px] text-amber-200/90 italic line-clamp-2 bg-black/30 p-2 rounded-lg border border-amber-500/20">
+                          &ldquo;{res.specialRequests}&rdquo;
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Card Actions: Quick Call, WhatsApp, Details & Statuses */}
+                    <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <a
+                          href={`tel:${res.phone}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-gold/20 text-gold text-xs font-semibold flex items-center gap-1 border border-white/10"
+                          title="Misafiri Ara"
+                        >
+                          <Phone className="w-3.5 h-3.5 text-gold" />
+                          <span className="text-[11px]">{res.phone}</span>
+                        </a>
+
+                        <a
+                          href={`https://wa.me/90${res.phone.replace(/[^0-9]/g, '').replace(/^0/, '')}?text=Merhaba%20Say%C4%B1n%20${encodeURIComponent(res.fullName)},%20HayalMest%20Anadolu%20Meyhanesi%20${res.date}%20tarihli%20saat%20${res.time}%20i%C3%A7in%20%23${res.pnr}%20kodlu%20${res.guestCount}%20ki%C5%9Filik%20rezervasyonunuz%20onaylanm%C4%B1%C5%9Ft%C4%B1r.%20Sizi%20a%C4%9F%C4%B1rlamaktan%20mutluluk%20duyaca%C4%9F%C4%B1z!`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors"
+                          title="WhatsApp Mesajı"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                        </a>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {res.status !== 'confirmed' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStatusChange(res.id, 'confirmed');
+                            }}
+                            className="px-2 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 text-[11px] font-bold transition-colors"
+                            title="Onayla"
+                          >
+                            Onayla
+                          </button>
+                        )}
+                        {res.status !== 'seated' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStatusChange(res.id, 'seated');
+                            }}
+                            className="px-2 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 text-[11px] font-bold transition-colors"
+                            title="Masada"
+                          >
+                            Masada
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedReservationModal(res);
+                          }}
+                          className="p-1.5 rounded-lg bg-gold/15 text-gold hover:bg-gold hover:text-black transition-colors"
+                          title="Detay"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* 2. DESKTOP RESERVATION TABLE (hidden sm:block) */}
+          <div className="hidden sm:block luxury-card rounded-2xl border border-meyhane-border overflow-hidden shadow-xl">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-meyhane-surface/90 text-gray-400 uppercase tracking-wider border-b border-meyhane-border font-medium">
@@ -1232,7 +1383,7 @@ export default function AdminPage() {
             </div>
 
             {/* Sort & Excel Export */}
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <select
                 value={customerSort}
                 onChange={(e) => setCustomerSort(e.target.value as any)}
@@ -1673,7 +1824,7 @@ export default function AdminPage() {
       {/* TAB 3: SAHNE & ETKİNLİK YÖNETİMİ (USER REQUESTED: ADD ARTISTS, BIOS, POSTERS, DATES) */}
       {activeTab === 'events' && (
         <div className="space-y-6 animate-fadeIn">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold font-serif text-white">Canlı Sahne &amp; Etkinlik Takvimi</h2>
               <p className="text-xs text-gray-400">Yeni konser, fasıl gecesi veya sanatçı ekleyin; sitede anında canlıya geçsin.</p>
@@ -1695,7 +1846,7 @@ export default function AdminPage() {
                 });
                 setShowEventModal(true);
               }}
-              className="px-4 py-2 rounded-xl bg-gold text-black font-semibold text-xs uppercase tracking-wider hover:brightness-110 flex items-center gap-1.5 shadow-md"
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gold text-black font-semibold text-xs uppercase tracking-wider hover:brightness-110 flex items-center justify-center gap-1.5 shadow-md"
             >
               <Plus className="w-4 h-4" />
               <span>Yeni Etkinlik / Sanatçı Ekle</span>
@@ -1759,7 +1910,7 @@ export default function AdminPage() {
       {/* TAB 4: MENÜ & FİYAT YÖNETİMİ */}
       {activeTab === 'menu' && (
         <div className="space-y-6 animate-fadeIn">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold font-serif text-white">Lezzet Menüsü &amp; Fiyat Düzenleme</h2>
               <p className="text-xs text-gray-400">Ürün fiyatlarını anında güncelleyin, yeni meze veya içki ekleyin.</p>
@@ -1777,7 +1928,7 @@ export default function AdminPage() {
                 });
                 setShowMenuModal(true);
               }}
-              className="px-4 py-2 rounded-xl bg-gold text-black font-semibold text-xs uppercase tracking-wider hover:brightness-110 flex items-center gap-1.5 shadow-md"
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-gold text-black font-semibold text-xs uppercase tracking-wider hover:brightness-110 flex items-center justify-center gap-1.5 shadow-md"
             >
               <Plus className="w-4 h-4" />
               <span>Yeni Ürün Ekle</span>
@@ -3244,7 +3395,7 @@ export default function AdminPage() {
           />
 
           {/* Floating Luxury Card Drawer pinned near top-right header */}
-          <div className="fixed top-16 sm:top-20 right-3 sm:right-6 z-50 w-80 sm:w-88 luxury-card rounded-3xl p-5 border-2 border-gold/60 shadow-2xl backdrop-blur-2xl animate-fadeIn space-y-4 max-h-[85vh] overflow-y-auto">
+          <div className="fixed top-16 sm:top-20 left-3 right-3 sm:left-auto sm:right-6 z-50 sm:w-88 max-h-[85vh] overflow-y-auto luxury-card rounded-3xl p-5 border-2 border-gold/60 shadow-2xl backdrop-blur-2xl animate-fadeIn space-y-4">
             {/* Drawer Header */}
             <div className="flex items-center justify-between border-b border-meyhane-border/70 pb-3">
               <div className="flex items-center gap-2">
@@ -3282,6 +3433,15 @@ export default function AdminPage() {
               >
                 <UserCheck className="w-4 h-4" />
                 <span>Host Masası (Kapı Masa Bulucu)</span>
+              </Link>
+
+              <Link
+                href="/garson"
+                onClick={() => setShowHamburgerMenu(false)}
+                className="w-full p-2.5 rounded-xl bg-meyhane-surface hover:bg-amber-500/15 border border-amber-500/40 text-amber-300 font-semibold flex items-center gap-2.5 transition-colors"
+              >
+                <Utensils className="w-4 h-4" />
+                <span>Garson Paneli (Masa Çağrıları)</span>
               </Link>
 
               <button

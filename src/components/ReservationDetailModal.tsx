@@ -242,7 +242,7 @@ export default function ReservationDetailModal({
         {/* Bottom Actions Bar */}
         <div className="pt-2 border-t border-meyhane-border/70 flex flex-wrap items-center justify-between gap-3 text-xs">
           
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {reservation.status !== 'confirmed' && (
               <button
                 onClick={() => onStatusChange(reservation.id, 'confirmed')}
