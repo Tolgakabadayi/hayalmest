@@ -62,21 +62,44 @@ export async function POST(request: Request) {
     // Send push notification to all subscribed waiter phones (vibration & screen-off wakeup)
     try {
       const isOrder = newReq.type === 'order';
+      const isBill = newReq.type === 'bill';
+      const isWater = newReq.type === 'ice_water';
+
       const itemsSummary = newReq.items && newReq.items.length > 0 
         ? `${newReq.items.length} çeşit ürün (${newReq.totalAmount ? newReq.totalAmount.toLocaleString('tr-TR') + ' ₺' : ''})` 
         : '';
 
-      let callTitle = `🛎️ ${newReq.tableName} Garson İstiyor!`;
-      if (newReq.type === 'bill') callTitle = `💳 ${newReq.tableName} Hesap İstiyor!`;
-      else if (newReq.type === 'ice_water') callTitle = `🧊 ${newReq.tableName} Buz & Su İstiyor!`;
-      else if (newReq.type === 'order') callTitle = `🍲 ${newReq.tableName} Sipariş Verdi!`;
+      let callTitle = `🛎️ ${newReq.tableName} — GARSON ÇAĞRISI`;
+      let bannerImage = '/banners/waiter.jpg';
+
+      if (isBill) {
+        callTitle = `💳 ${newReq.tableName} — HESAP İSTİYOR`;
+        bannerImage = '/banners/bill.jpg';
+      } else if (isWater) {
+        callTitle = `🧊 ${newReq.tableName} — BUZ & SU TALEBİ`;
+        bannerImage = '/banners/ice-water.jpg';
+      } else if (isOrder) {
+        callTitle = `🍲 ${newReq.tableName} — YEMEK SİPARİŞİ`;
+        bannerImage = '/banners/order.jpg';
+      }
+
+      // Clean section name (strip parenthetical text like '(Keyif & Muhabbet)')
+      const cleanSection = newReq.sectionName ? newReq.sectionName.split('(')[0].trim() : '';
+
+      let bodyText = '';
+      if (isOrder) {
+        const orderPreview = newReq.items ? newReq.items.map(it => `${it.quantity}x ${it.name}`).slice(0, 3).join(', ') : '';
+        bodyText = `${cleanSection ? '📍 ' + cleanSection + ' • ' : ''}${orderPreview ? orderPreview : itemsSummary}${newReq.note ? ' • Not: "' + newReq.note + '"' : ''}`;
+      } else if (newReq.note) {
+        bodyText = `${cleanSection ? '📍 ' + cleanSection + ' • ' : ''}💬 "${newReq.note}"`;
+      } else {
+        bodyText = `${cleanSection ? '📍 ' + cleanSection + ' • ' : ''}Misafir masada servis bekliyor.`;
+      }
 
       sendPushToWaiters({
         title: callTitle,
-        body: isOrder 
-          ? `Sipariş: ${itemsSummary}${newReq.note ? ' • Not: ' + newReq.note : ''}`
-          : (newReq.note ? `Not: ${newReq.note}` : `${newReq.sectionName ? newReq.sectionName + ' • ' : ''}Misafir masada servis bekliyor.`),
-        image: '/icons/garson-icon.jpg',
+        body: bodyText,
+        image: bannerImage,
         tag: `call-${newReq.tableId}-${Date.now()}`,
         data: {
           request: newReq,

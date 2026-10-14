@@ -18,10 +18,10 @@ export async function POST(req: Request) {
     if (test) {
       // Trigger a realistic test notification
       const result = await sendPushToWaiters({
-        title: '🛎️ MASA 4 — GARSON İSTİYOR!',
-        body: 'Masa 4 servis bekliyor. Kilit ekranı bildirimi, görsel afiş ve titreşim başarıyla çalışıyor!',
-        image: '/icons/garson-icon.jpg',
-        data: { test: true, tableId: 'Masa 4' },
+        title: '🛎️ MASA 4 — GARSON ÇAĞRISI',
+        body: '📍 VIP Sahne • Kilit ekranı bildirimi, 16:9 lüks afiş ve titreşim devrede!',
+        image: '/banners/waiter.jpg',
+        data: { test: true, tableId: 'Masa 4', url: '/garson' },
         vibrate: [500, 200, 500, 200, 500, 200, 700],
       });
       return NextResponse.json({ success: true, ...result });

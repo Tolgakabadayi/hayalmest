@@ -35,8 +35,8 @@ self.addEventListener('push', (event) => {
     requireInteraction: true, // Keep notification visible until actioned
     data: data.data || { url: '/garson' },
     actions: data.actions || [
-      { action: 'complete', title: '✅ Masaya Gidildi' },
-      { action: 'open', title: '📲 Masayı Aç' }
+      { action: 'complete', title: '✅ GİDİLDİ' },
+      { action: 'open', title: '📲 MASAYI AÇ' }
     ]
   };
 
