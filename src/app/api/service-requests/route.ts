@@ -51,11 +51,17 @@ export async function POST(request: Request) {
         ? `${newReq.items.length} çeşit ürün (${newReq.totalAmount ? newReq.totalAmount.toLocaleString('tr-TR') + ' ₺' : ''})` 
         : '';
 
+      let callTitle = `🛎️ ${newReq.tableName} Garson İstiyor!`;
+      if (newReq.type === 'bill') callTitle = `💳 ${newReq.tableName} Hesap İstiyor!`;
+      else if (newReq.type === 'ice_water') callTitle = `🧊 ${newReq.tableName} Buz & Su İstiyor!`;
+      else if (newReq.type === 'order') callTitle = `🍲 ${newReq.tableName} Sipariş Verdi!`;
+
       sendPushToWaiters({
-        title: `🔔 ${newReq.tableName}: ${newReq.title}`,
+        title: callTitle,
         body: isOrder 
-          ? `Sipariş: ${itemsSummary}${newReq.note ? ' • ' + newReq.note : ''}`
-          : (newReq.note ? `Not: ${newReq.note}` : `${newReq.sectionName ? newReq.sectionName + ' • ' : ''}Garson bekleniyor`),
+          ? `Sipariş: ${itemsSummary}${newReq.note ? ' • Not: ' + newReq.note : ''}`
+          : (newReq.note ? `Not: ${newReq.note}` : `${newReq.sectionName ? newReq.sectionName + ' • ' : ''}Misafir masada servis bekliyor.`),
+        image: '/icons/garson-icon.jpg',
         tag: `call-${newReq.tableId}-${Date.now()}`,
         data: {
           requestId: newReq.id,
@@ -63,7 +69,7 @@ export async function POST(request: Request) {
           type: newReq.type,
           url: '/garson',
         },
-        vibrate: [400, 150, 400, 150, 500],
+        vibrate: [500, 200, 500, 200, 500, 200, 700],
       }).catch(err => console.error('Push broadcast error:', err));
     } catch (pushErr) {
       console.error('Push dispatch failed:', pushErr);

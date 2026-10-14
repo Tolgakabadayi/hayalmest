@@ -1,6 +1,5 @@
 import webpush from 'web-push';
-import fs from 'fs';
-import path from 'path';
+import { safeReadJson, safeWriteJson } from './safeStorage';
 
 // Permanent VAPID Keys for HayalMest Waiter PWA Push Notifications
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BLwNaVvcL2v98WFkJWk-qzcXNKm3-J2XQGD3BTl2W48Bmbujr7fHtNCfOWYoHIYAzmgk98ll2C0WGqZbQW-1Uzg';
@@ -25,31 +24,14 @@ export interface PushSubscriptionData {
   updatedAt: string;
 }
 
-const SUBSCRIPTIONS_FILE = path.join(process.cwd(), 'data', 'pushSubscriptions.json');
-
-function ensureDataDir() {
-  const dir = path.join(process.cwd(), 'data');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-}
+const FILE_NAME = 'pushSubscriptions.json';
 
 export function getVapidPublicKey(): string {
   return VAPID_PUBLIC_KEY;
 }
 
 export function getStoredSubscriptions(): PushSubscriptionData[] {
-  try {
-    ensureDataDir();
-    if (!fs.existsSync(SUBSCRIPTIONS_FILE)) {
-      return [];
-    }
-    const data = fs.readFileSync(SUBSCRIPTIONS_FILE, 'utf-8');
-    return JSON.parse(data) || [];
-  } catch (err) {
-    console.error('Error reading push subscriptions:', err);
-    return [];
-  }
+  return safeReadJson<PushSubscriptionData[]>(FILE_NAME, []);
 }
 
 export function saveSubscription(sub: {
@@ -60,7 +42,6 @@ export function saveSubscription(sub: {
   userAgent?: string;
 }): boolean {
   try {
-    ensureDataDir();
     const current = getStoredSubscriptions();
     const filtered = current.filter(s => s.endpoint !== sub.endpoint);
     
@@ -73,7 +54,7 @@ export function saveSubscription(sub: {
       updatedAt: new Date().toISOString(),
     });
 
-    fs.writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(filtered, null, 2), 'utf-8');
+    safeWriteJson(FILE_NAME, filtered);
     return true;
   } catch (err) {
     console.error('Error saving push subscription:', err);
@@ -85,7 +66,7 @@ export function removeSubscription(endpoint: string): void {
   try {
     const current = getStoredSubscriptions();
     const updated = current.filter(s => s.endpoint !== endpoint);
-    fs.writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+    safeWriteJson(FILE_NAME, updated);
   } catch (err) {
     console.error('Error removing subscription:', err);
   }
@@ -96,6 +77,7 @@ export interface PushNotificationPayload {
   body: string;
   icon?: string;
   badge?: string;
+  image?: string;
   tag?: string;
   data?: Record<string, any>;
   vibrate?: number[];
@@ -105,27 +87,30 @@ export interface PushNotificationPayload {
 export async function sendPushToWaiters(payload: PushNotificationPayload): Promise<{
   successCount: number;
   failureCount: number;
+  totalSubscribers: number;
 }> {
   const subs = getStoredSubscriptions();
   if (subs.length === 0) {
-    return { successCount: 0, failureCount: 0 };
+    console.log('[WebPush] No subscribers currently registered in pushSubscriptions.json');
+    return { successCount: 0, failureCount: 0, totalSubscribers: 0 };
   }
 
   const notificationPayload = JSON.stringify({
     title: payload.title,
     body: payload.body,
-    icon: payload.icon || '/icons/garson-icon.jpg',
-    badge: payload.badge || '/icons/garson-icon.jpg',
-    tag: payload.tag || 'hayalmest-service-call',
-    vibrate: payload.vibrate || [300, 100, 300, 100, 400],
+    icon: payload.icon || '/icons/icon-192.png',
+    badge: payload.badge || '/icons/icon-192.png',
+    image: payload.image || '/icons/garson-icon.jpg', // Rich visual banner on lock screen
+    tag: payload.tag || `hayalmest-${Date.now()}`,
+    vibrate: payload.vibrate || [500, 200, 500, 200, 500, 200, 700], // Strong Meyhane call pattern
     data: {
       url: '/garson',
       timestamp: Date.now(),
       ...payload.data,
     },
     actions: payload.actions || [
-      { action: 'open', title: '📲 Talebi Aç' },
-      { action: 'dismiss', title: 'Tamam' },
+      { action: 'complete', title: '✅ Masaya Gidildi' },
+      { action: 'open', title: '📲 Masayı Aç' },
     ],
   });
 
@@ -135,12 +120,17 @@ export async function sendPushToWaiters(payload: PushNotificationPayload): Promi
 
   for (const sub of subs) {
     try {
+      // TTL: 300 seconds, urgency: 'high' forces instant wakeup and screen lighting on Android/iOS
       await webpush.sendNotification(
         {
           endpoint: sub.endpoint,
           keys: sub.keys,
         },
-        notificationPayload
+        notificationPayload,
+        {
+          TTL: 300,
+          urgency: 'high',
+        }
       );
       successCount++;
     } catch (err: any) {
@@ -149,7 +139,7 @@ export async function sendPushToWaiters(payload: PushNotificationPayload): Promi
       if (err.statusCode === 410 || err.statusCode === 404) {
         expiredEndpoints.push(sub.endpoint);
       } else {
-        console.warn(`Web push delivery error (${sub.endpoint.slice(0, 35)}...):`, err.message);
+        console.warn(`[WebPush] Delivery warning (${sub.endpoint.slice(0, 30)}...):`, err.message);
       }
     }
   }
@@ -157,8 +147,9 @@ export async function sendPushToWaiters(payload: PushNotificationPayload): Promi
   // Clean up expired tokens
   if (expiredEndpoints.length > 0) {
     const remaining = subs.filter(s => !expiredEndpoints.includes(s.endpoint));
-    fs.writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(remaining, null, 2), 'utf-8');
+    safeWriteJson(FILE_NAME, remaining);
   }
 
-  return { successCount, failureCount };
+  console.log(`[WebPush] Sent to ${successCount} devices (${failureCount} failed)`);
+  return { successCount, failureCount, totalSubscribers: subs.length };
 }

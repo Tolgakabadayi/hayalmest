@@ -69,6 +69,7 @@ export default function WaiterPanelPage() {
 
   // PWA & Push Notifications State
   const [pushStatus, setPushStatus] = useState<'checking' | 'unsupported' | 'default' | 'granted' | 'denied'>('checking');
+  const [isSubscribed, setIsSubscribed] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [pushTestMsg, setPushTestMsg] = useState('');
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
@@ -108,7 +109,49 @@ export default function WaiterPanelPage() {
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
   }, []);
 
-  // 3. Register Service Worker and check push notifications
+  // 3. Sync Push Subscription with Server
+  const syncPushSubscription = useCallback(async (waiter: string) => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+
+      if (!sub && 'Notification' in window && Notification.permission === 'granted') {
+        const keyRes = await fetch('/api/waiter/push-subscribe');
+        const keyJson = await keyRes.json();
+        if (keyJson.publicKey) {
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(keyJson.publicKey),
+          });
+        }
+      }
+
+      if (sub) {
+        const res = await fetch('/api/waiter/push-subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subscription: sub,
+            waiterName: waiter,
+          }),
+        });
+        const json = await res.json();
+        if (json.success) {
+          setIsSubscribed(true);
+          return true;
+        }
+      }
+      setIsSubscribed(false);
+      return false;
+    } catch (err) {
+      console.warn('Push sync error:', err);
+      setIsSubscribed(false);
+      return false;
+    }
+  }, []);
+
+  // 4. Register Service Worker and check push notifications
   useEffect(() => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       setPushStatus('unsupported');
@@ -117,10 +160,14 @@ export default function WaiterPanelPage() {
 
     navigator.serviceWorker
       .register('/sw.js')
-      .then((reg) => {
+      .then(async (reg) => {
         // Check notification permission
         if ('Notification' in window) {
-          setPushStatus(Notification.permission as any);
+          const perm = Notification.permission;
+          setPushStatus(perm as any);
+          if (perm === 'granted') {
+            await syncPushSubscription(waiterName);
+          }
         }
       })
       .catch((err) => {
@@ -136,12 +183,12 @@ export default function WaiterPanelPage() {
     };
     navigator.serviceWorker.addEventListener('message', handleMessage);
     return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
-  }, []);
+  }, [syncPushSubscription, waiterName]);
 
-  // 4. Request Push Notification Permission & Subscribe
+  // 5. Request Push Notification Permission & Subscribe
   const handleEnablePush = async () => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      alert('Bu tarayıcı kilit ekranı bildirimlerini desteklemiyor.');
+      alert('Bu tarayıcı kilit ekranı bildirimlerini desteklemiyor. iOS cihazlarda lütfen Safari "Paylaş > Ana Ekrana Ekle" yaparak açın.');
       return;
     }
 
@@ -151,37 +198,18 @@ export default function WaiterPanelPage() {
       setPushStatus(permission as any);
 
       if (permission === 'granted') {
-        const reg = await navigator.serviceWorker.ready;
-        
-        // Get VAPID public key
-        const keyRes = await fetch('/api/waiter/push-subscribe');
-        const keyJson = await keyRes.json();
-        if (!keyJson.publicKey) {
-          throw new Error('VAPID public key alınamadı.');
-        }
-
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(keyJson.publicKey),
-        });
-
-        // Register to server
-        await fetch('/api/waiter/push-subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            subscription: sub,
-            waiterName,
-          }),
-        });
+        const synced = await syncPushSubscription(waiterName);
 
         // Haptic feedback
         if ('vibrate' in navigator) {
           navigator.vibrate([100, 50, 100]);
         }
 
-        setPushTestMsg('✅ Bildirim ve titreşim başarıyla açıldı!');
-        setTimeout(() => setPushTestMsg(''), 4000);
+        if (synced) {
+          setPushTestMsg('✅ Kilit ekranı bildirimleri ve titreşim başarıyla bağlandı!');
+        } else {
+          setPushTestMsg('⚠️ İzin verildi ancak abonelik kaydedilemedi. Sayfayı yenileyip tekrar deneyin.');
+        }
       } else if (permission === 'denied') {
         alert('Bildirim izni reddedildi. Telefon ayarlarından tarayıcı bildirimlerine izin verebilirsiniz.');
       }
@@ -190,18 +218,17 @@ export default function WaiterPanelPage() {
       alert('Bildirim aboneliği oluşturulamadı: ' + err.message);
     } finally {
       setPushLoading(false);
+      setTimeout(() => setPushTestMsg(''), 5000);
     }
   };
 
-  // 5. Test Push Notification (Sends real notification to phone)
+  // 6. Test Push Notification (Sends real notification to phone)
   const handleTestPushNotification = async () => {
     setPushLoading(true);
-    setPushTestMsg('Test bildirimi gönderiliyor...');
+    setPushTestMsg('⏳ Test bildirimi hazırlanıyor...');
     try {
-      // In-app test vibration
-      if ('vibrate' in navigator) {
-        navigator.vibrate([200, 100, 200, 100, 400]);
-      }
+      // First ensure subscription is 100% active on server
+      await syncPushSubscription(waiterName);
 
       const res = await fetch('/api/waiter/push-subscribe', {
         method: 'POST',
@@ -209,16 +236,21 @@ export default function WaiterPanelPage() {
         body: JSON.stringify({ test: true }),
       });
       const json = await res.json();
-      if (json.success) {
-        setPushTestMsg('🔔 Test bildirimi yollandı! Ekranı kilitleyip kontrol edebilirsiniz.');
+      if (json.success && json.successCount > 0) {
+        setPushTestMsg(`🛎️ Telefonunuza 'MASA 4 GARSON İSTİYOR' bildirimi yollandı! (${json.successCount} cihaza iletildi)`);
+        if ('vibrate' in navigator) {
+          navigator.vibrate([500, 200, 500, 200, 500, 200, 700]);
+        }
+      } else if (json.totalSubscribers === 0) {
+        setPushTestMsg('⚠️ Kayıtlı telefon bulunamadı. Lütfen "Şimdi Aç" butonuna dokunup onaylayın.');
       } else {
-        setPushTestMsg('Abonelik bulunamadı, lütfen önce bildirimleri açın.');
+        setPushTestMsg('⚠️ Bildirim iletilemedi. Lütfen izinleri yenileyin.');
       }
     } catch (e) {
-      setPushTestMsg('Test gönderiminde hata oluştu.');
+      setPushTestMsg('❌ Test gönderiminde hata oluştu.');
     } finally {
       setPushLoading(false);
-      setTimeout(() => setPushTestMsg(''), 5000);
+      setTimeout(() => setPushTestMsg(''), 7000);
     }
   };
 
@@ -410,26 +442,43 @@ export default function WaiterPanelPage() {
 
         </div>
 
-        {/* Push Notification Bar / Warning if not granted */}
-        {pushStatus === 'default' && (
-          <div className="bg-gradient-to-r from-amber-950/60 via-amber-900/40 to-amber-950/60 border-t border-amber-500/30 px-3.5 py-1.5 flex items-center justify-between text-xs animate-fadeIn">
-            <div className="flex items-center gap-1.5 text-amber-300 text-[11px] font-medium truncate">
-              <Vibrate className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-              <span className="truncate">Ekran kapalıyken titreşim &amp; bildirim almak için açın</span>
+        {/* Push Notification Bar */}
+        {pushStatus !== 'granted' ? (
+          <div className="bg-gradient-to-r from-amber-950/70 via-amber-900/50 to-amber-950/70 border-t border-amber-500/40 px-3.5 py-2 flex items-center justify-between text-xs animate-fadeIn">
+            <div className="flex items-center gap-1.5 text-amber-300 text-[11px] font-semibold truncate">
+              <Vibrate className="w-4 h-4 text-amber-400 flex-shrink-0 animate-bounce" />
+              <span className="truncate">Ekran Kapalıyken Bildirim &amp; Titreşim</span>
             </div>
             <button
               type="button"
               onClick={handleEnablePush}
               disabled={pushLoading}
-              className="px-2.5 py-1 rounded-lg bg-gold text-black text-[10px] font-bold uppercase tracking-wider shadow whitespace-nowrap active:scale-95 transition-all"
+              className="px-3 py-1 rounded-xl bg-gold text-black text-[11px] font-bold uppercase tracking-wider shadow whitespace-nowrap active:scale-95 transition-all"
             >
-              {pushLoading ? 'Açılıyor...' : 'Aç (İzin Ver)'}
+              {pushLoading ? 'Açılıyor...' : 'Şimdi Aç'}
+            </button>
+          </div>
+        ) : (
+          <div className="bg-emerald-950/40 border-t border-emerald-500/30 px-3.5 py-1.5 flex items-center justify-between text-xs animate-fadeIn">
+            <div className="flex items-center gap-1.5 text-emerald-400 text-[10px] font-semibold truncate">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+              <span className="truncate">Kilit Ekranı Hazır ({isSubscribed ? 'Bağlandı' : 'Bağlanıyor...'})</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleTestPushNotification}
+              disabled={pushLoading}
+              className="px-2.5 py-0.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 text-[10px] font-bold border border-emerald-500/40 whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
+              title="Telefonu kilitleyip bildirim ve titreşimi test edin"
+            >
+              <Bell className="w-3 h-3" />
+              <span>Test Bildirimi Gönder</span>
             </button>
           </div>
         )}
 
         {pushTestMsg && (
-          <div className="bg-emerald-950/80 border-t border-emerald-500/40 px-3.5 py-1.5 text-[11px] text-emerald-300 font-medium text-center animate-fadeIn">
+          <div className="bg-gradient-to-r from-emerald-950/90 to-black border-t border-emerald-500/50 px-3.5 py-2 text-[11px] text-emerald-300 font-bold text-center animate-fadeIn shadow-lg">
             {pushTestMsg}
           </div>
         )}

@@ -16,12 +16,13 @@ export async function POST(req: Request) {
     const { subscription, waiterId, waiterName, test } = body;
 
     if (test) {
-      // Trigger a test notification
+      // Trigger a realistic test notification
       const result = await sendPushToWaiters({
-        title: '🔔 Test Bildirimi: HayalMest Garson',
-        body: 'Tebrikler! Masa çağrı ve titreşim bildirimleriniz başarıyla aktifleştirildi.',
-        data: { test: true },
-        vibrate: [300, 100, 300, 100, 400],
+        title: '🛎️ MASA 4 — GARSON İSTİYOR!',
+        body: 'Masa 4 servis bekliyor. Kilit ekranı bildirimi, görsel afiş ve titreşim başarıyla çalışıyor!',
+        image: '/icons/garson-icon.jpg',
+        data: { test: true, tableId: 'Masa 4' },
+        vibrate: [500, 200, 500, 200, 500, 200, 700],
       });
       return NextResponse.json({ success: true, ...result });
     }
