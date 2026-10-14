@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServiceRequests, addServiceRequest } from '@/lib/serviceRequestsStorage';
+import { sendPushToWaiters } from '@/lib/pushNotifications';
 
 export async function GET() {
   try {
@@ -42,6 +43,31 @@ export async function POST(request: Request) {
       items: body.items || undefined,
       totalAmount: typeof body.totalAmount === 'number' ? body.totalAmount : undefined,
     });
+
+    // Send push notification to all subscribed waiter phones (vibration & screen-off wakeup)
+    try {
+      const isOrder = newReq.type === 'order';
+      const itemsSummary = newReq.items && newReq.items.length > 0 
+        ? `${newReq.items.length} çeşit ürün (${newReq.totalAmount ? newReq.totalAmount.toLocaleString('tr-TR') + ' ₺' : ''})` 
+        : '';
+
+      sendPushToWaiters({
+        title: `🔔 ${newReq.tableName}: ${newReq.title}`,
+        body: isOrder 
+          ? `Sipariş: ${itemsSummary}${newReq.note ? ' • ' + newReq.note : ''}`
+          : (newReq.note ? `Not: ${newReq.note}` : `${newReq.sectionName ? newReq.sectionName + ' • ' : ''}Garson bekleniyor`),
+        tag: `call-${newReq.tableId}-${Date.now()}`,
+        data: {
+          requestId: newReq.id,
+          tableId: newReq.tableId,
+          type: newReq.type,
+          url: '/garson',
+        },
+        vibrate: [400, 150, 400, 150, 500],
+      }).catch(err => console.error('Push broadcast error:', err));
+    } catch (pushErr) {
+      console.error('Push dispatch failed:', pushErr);
+    }
 
     return NextResponse.json({ success: true, data: newReq }, { status: 201 });
   } catch (error) {

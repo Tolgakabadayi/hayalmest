@@ -66,11 +66,11 @@ function WaiterLoginForm() {
       
       {/* Logo & Header */}
       <div className="text-center space-y-3">
-        <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-400 mx-auto flex items-center justify-center shadow-xl">
-          <Utensils className="w-7 h-7" />
+        <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-gold/60 shadow-xl mx-auto relative bg-black">
+          <img src="/icons/garson-icon.jpg" alt="HayalMest Garson" className="w-full h-full object-cover" />
         </div>
         <h1 className="text-2xl font-bold font-serif text-white">
-          Garson & Servis Paneli
+          Garson &amp; Servis Paneli
         </h1>
         <p className="text-xs text-meyhane-muted">
           Canlı masa çağrıları, menü siparişleri ve hesap talepleri için PIN ile hızlı giriş
