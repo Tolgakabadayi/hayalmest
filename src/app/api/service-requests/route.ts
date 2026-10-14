@@ -27,6 +27,7 @@ export async function POST(request: Request) {
       ice_water: 'Buz & Su Talebi',
       bill: 'Hesap Talebi',
       cutlery: 'Servis / Çatal-Bıçak Talebi',
+      order: 'Menü Siparişi',
       custom: 'Özel Talep',
     };
 
@@ -38,6 +39,8 @@ export async function POST(request: Request) {
       type: body.type,
       title: body.title || titles[body.type] || 'Servis Talebi',
       note: body.note || '',
+      items: body.items || undefined,
+      totalAmount: typeof body.totalAmount === 'number' ? body.totalAmount : undefined,
     });
 
     return NextResponse.json({ success: true, data: newReq }, { status: 201 });

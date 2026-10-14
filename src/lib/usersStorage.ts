@@ -22,9 +22,19 @@ export interface HostUser {
   createdBy: string;
 }
 
+export interface WaiterUser {
+  id: string;
+  name: string;
+  pin: string;
+  active: boolean;
+  createdAt: string;
+  createdBy: string;
+}
+
 export interface UsersData {
   admins: AdminUser[];
   hosts: HostUser[];
+  waiters: WaiterUser[];
 }
 
 const DEFAULT_USERS: UsersData = {
@@ -49,11 +59,25 @@ const DEFAULT_USERS: UsersData = {
       createdAt: '2026-01-01T00:00:00.000Z',
       createdBy: 'system'
     }
+  ],
+  waiters: [
+    {
+      id: 'waiter-1',
+      name: 'Garson Mehmet',
+      pin: '1234',
+      active: true,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      createdBy: 'system'
+    }
   ]
 };
 
 function readUsers(): UsersData {
-  return safeReadJson<UsersData>(USERS_FILE, DEFAULT_USERS);
+  const data = safeReadJson<UsersData>(USERS_FILE, DEFAULT_USERS);
+  if (!data.waiters) {
+    data.waiters = DEFAULT_USERS.waiters;
+  }
+  return data;
 }
 
 function writeUsers(data: UsersData): void {
@@ -74,6 +98,12 @@ export function authenticateHost(pin: string): HostUser | null {
   const data = readUsers();
   const host = data.hosts.find(h => h.pin === pin && h.active);
   return host || null;
+}
+
+export function authenticateWaiter(pin: string): WaiterUser | null {
+  const data = readUsers();
+  const waiter = (data.waiters || []).find(w => w.pin === pin && w.active);
+  return waiter || null;
 }
 
 export function addAdmin(admin: Omit<AdminUser, 'id' | 'createdAt'>): AdminUser {
@@ -133,6 +163,37 @@ export function updateHost(id: string, updates: Partial<Omit<HostUser, 'id' | 'c
 export function deleteHost(id: string): boolean {
   const data = readUsers();
   data.hosts = data.hosts.filter(h => h.id !== id);
+  writeUsers(data);
+  return true;
+}
+
+export function addWaiter(waiter: Omit<WaiterUser, 'id' | 'createdAt'>): WaiterUser {
+  const data = readUsers();
+  data.waiters = data.waiters || [];
+  const newWaiter: WaiterUser = {
+    ...waiter,
+    id: 'waiter-' + Date.now(),
+    createdAt: new Date().toISOString(),
+  };
+  data.waiters.push(newWaiter);
+  writeUsers(data);
+  return newWaiter;
+}
+
+export function updateWaiter(id: string, updates: Partial<Omit<WaiterUser, 'id' | 'createdAt'>>): WaiterUser | null {
+  const data = readUsers();
+  data.waiters = data.waiters || [];
+  const idx = data.waiters.findIndex(w => w.id === id);
+  if (idx === -1) return null;
+  data.waiters[idx] = { ...data.waiters[idx], ...updates };
+  writeUsers(data);
+  return data.waiters[idx];
+}
+
+export function deleteWaiter(id: string): boolean {
+  const data = readUsers();
+  data.waiters = data.waiters || [];
+  data.waiters = data.waiters.filter(w => w.id !== id);
   writeUsers(data);
   return true;
 }

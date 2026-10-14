@@ -18,7 +18,12 @@ import {
   Music,
   MapPin,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Plus,
+  Minus,
+  ShoppingBag,
+  Trash2,
+  Flame
 } from 'lucide-react';
 import { MENU_ITEMS, MENU_CATEGORIES, MenuItem } from '@/data/menuData';
 import { ALL_TABLES, VENUE_SECTIONS } from '@/data/tablesData';
@@ -57,6 +62,95 @@ export default function TableQrMenuPage({ params }: { params: { tableId: string 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
+
+  // Cart & Order state
+  const [cart, setCart] = useState<{ [itemId: string]: { item: MenuItem; quantity: number } }>({});
+  const [showCartModal, setShowCartModal] = useState(false);
+  const [orderNote, setOrderNote] = useState('');
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+
+  // Cart helpers
+  const addToCart = (item: MenuItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setCart(prev => {
+      const current = prev[item.id]?.quantity || 0;
+      return {
+        ...prev,
+        [item.id]: { item, quantity: current + 1 }
+      };
+    });
+  };
+
+  const removeFromCart = (itemId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setCart(prev => {
+      const current = prev[itemId]?.quantity || 0;
+      if (current <= 1) {
+        const copy = { ...prev };
+        delete copy[itemId];
+        return copy;
+      }
+      return {
+        ...prev,
+        [itemId]: { ...prev[itemId], quantity: current - 1 }
+      };
+    });
+  };
+
+  const deleteFromCart = (itemId: string) => {
+    setCart(prev => {
+      const copy = { ...prev };
+      delete copy[itemId];
+      return copy;
+    });
+  };
+
+  const cartEntries = Object.values(cart);
+  const totalCartCount = cartEntries.reduce((sum, c) => sum + c.quantity, 0);
+  const totalCartPrice = cartEntries.reduce((sum, c) => sum + (c.item.price * c.quantity), 0);
+
+  const handleSubmitOrder = async () => {
+    if (cartEntries.length === 0) return;
+    setIsSubmittingOrder(true);
+    try {
+      const res = await fetch('/api/service-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tableId: rawTableId,
+          tableName,
+          sectionName,
+          type: 'order',
+          title: `Menü Siparişi (${totalCartCount} Çeşit)`,
+          note: orderNote || '',
+          items: cartEntries.map(c => ({
+            id: c.item.id,
+            name: c.item.name,
+            quantity: c.quantity,
+            price: c.item.price,
+            category: c.item.category
+          })),
+          totalAmount: totalCartPrice
+        }),
+      });
+
+      const json = await res.json();
+      if (json.success && json.data) {
+        setMyCalls(prev => [json.data, ...prev]);
+        setCart({});
+        setOrderNote('');
+        setShowCartModal(false);
+        setCallFeedback('Siparişiniz garson ve mutfak paneline iletildi! Afiyet olsun.');
+        setTimeout(() => setCallFeedback(null), 6000);
+      } else {
+        alert('Sipariş iletilemedi, lütfen garsona bildiriniz.');
+      }
+    } catch (err) {
+      alert('Bağlantı hatası oluştu.');
+    } finally {
+      setIsSubmittingOrder(false);
+    }
+  };
 
   // Tonight's event
   const tonightEvent = STAGE_EVENTS[0] || null;
@@ -455,12 +549,49 @@ export default function TableQrMenuPage({ params }: { params: { tableId: string 
                   </div>
                 </div>
 
-                <div className="text-right flex-shrink-0">
-                  <div className="text-sm font-bold font-mono text-gold">
-                    ₺{item.price.toLocaleString('tr-TR')}
+                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                  <div className="text-right">
+                    <div className="text-sm font-bold font-mono text-gold">
+                      ₺{item.price.toLocaleString('tr-TR')}
+                    </div>
+                    {item.unit && (
+                      <div className="text-[9px] text-meyhane-muted">{item.unit}</div>
+                    )}
                   </div>
-                  {item.unit && (
-                    <div className="text-[9px] text-meyhane-muted">{item.unit}</div>
+
+                  {/* Cart Quantity / Add Button */}
+                  {cart[item.id] ? (
+                    <div 
+                      onClick={(e) => e.stopPropagation()} 
+                      className="flex items-center gap-1.5 bg-black/60 border border-gold/50 rounded-xl p-0.5 shadow"
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => removeFromCart(item.id, e)}
+                        className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 active:bg-gold active:text-black text-white flex items-center justify-center transition-all"
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <span className="font-mono font-bold text-xs text-gold px-1 min-w-[16px] text-center">
+                        {cart[item.id].quantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => addToCart(item, e)}
+                        className="w-6 h-6 rounded-lg bg-gold text-black hover:brightness-110 flex items-center justify-center font-bold transition-all shadow"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => addToCart(item, e)}
+                      className="px-2.5 py-1 rounded-xl bg-gold/15 hover:bg-gold text-gold hover:text-black border border-gold/40 text-[11px] font-bold transition-all flex items-center gap-1 shadow-sm active:scale-95"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Ekle</span>
+                    </button>
                   )}
                 </div>
               </div>
@@ -636,20 +767,191 @@ export default function TableQrMenuPage({ params }: { params: { tableId: string 
                 </p>
               )}
 
-              <div className="pt-2">
+              <div className="pt-2 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    addToCart(selectedMenuItem);
+                    setSelectedMenuItem(null);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-gold hover:brightness-110 text-black text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-md shadow-gold/20"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Sepete Ekle ({selectedMenuItem.price.toLocaleString('tr-TR')} ₺)</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
                     setSelectedMenuItem(null);
-                    handleCallService('waiter', `${selectedMenuItem.name} siparişi vermek istiyoruz`);
+                    handleCallService('waiter', `${selectedMenuItem.name} hakkında soru sormak istiyoruz`);
                   }}
-                  className="w-full py-2.5 rounded-xl bg-gold hover:brightness-110 text-black text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-md shadow-gold/20"
+                  className="w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-semibold transition-all flex items-center justify-center gap-1.5 border border-white/10"
                 >
-                  <Bell className="w-3.5 h-3.5" />
+                  <Bell className="w-3.5 h-3.5 text-gold" />
                   <span>Bu Lezzet İçin Garson Çağır</span>
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 9. YÜZEN SEPET ÇUBUĞU (FLOATING CART BAR) */}
+      {totalCartCount > 0 && !showCartModal && (
+        <div className="fixed bottom-4 left-4 right-4 z-40 max-w-lg mx-auto animate-bounce-short">
+          <button
+            type="button"
+            onClick={() => setShowCartModal(true)}
+            className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-amber-600 via-gold to-amber-600 text-black font-bold text-sm shadow-2xl flex items-center justify-between border border-gold/50 hover:brightness-110 active:scale-98 transition-all"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="w-7 h-7 rounded-full bg-black text-gold font-mono font-bold flex items-center justify-center text-xs shadow">
+                {totalCartCount}
+              </span>
+              <span className="font-serif">Sipariş Sepeti</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono font-black text-base">
+                {totalCartPrice.toLocaleString('tr-TR')} ₺
+              </span>
+              <ChevronRight className="w-4 h-4" />
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* 10. SEPET & SİPARİŞ MODALI */}
+      {showCartModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md p-4 flex items-center justify-center animate-fadeIn">
+          <div className="luxury-card max-w-md w-full rounded-3xl p-5 sm:p-6 border border-gold/40 shadow-2xl bg-[#141824] space-y-4 max-h-[90vh] flex flex-col justify-between">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-meyhane-border/70 pb-3 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-gold" />
+                <div>
+                  <h3 className="text-base font-bold font-serif text-white">
+                    {tableName} - Sipariş Sepetiniz
+                  </h3>
+                  <span className="text-[10px] text-gray-400">
+                    Seçtiğiniz mezeler ve lezzetler anında garson paneline iletilir
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCartModal(false)}
+                className="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Cart Items List */}
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 max-h-[45vh]">
+              {cartEntries.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 text-xs">
+                  Sepetinizde ürün bulunmamaktadır.
+                </div>
+              ) : (
+                cartEntries.map(({ item, quantity }) => (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-xl bg-meyhane-bg/90 border border-meyhane-border flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-semibold text-white truncate">{item.name}</div>
+                      <div className="text-[10px] text-gold font-mono">
+                        ₺{item.price.toLocaleString('tr-TR')} {item.unit ? `· ${item.unit}` : ''}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {/* Quantity Controls */}
+                      <div className="flex items-center gap-1 bg-black/50 border border-white/10 rounded-lg p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => removeFromCart(item.id)}
+                          className="w-6 h-6 rounded bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <span className="w-6 text-center text-xs font-mono font-bold text-white">
+                          {quantity}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => addToCart(item)}
+                          className="w-6 h-6 rounded bg-gold text-black flex items-center justify-center font-bold"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => deleteFromCart(item.id)}
+                        className="p-1 text-gray-500 hover:text-red-400 transition-colors"
+                        title="Sepetten Çıkar"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Order Note Field */}
+            <div className="space-y-1.5 flex-shrink-0 pt-1">
+              <label className="text-[11px] font-semibold text-gray-300 block">
+                Mutfak &amp; Servis Notu (İsteğe Bağlı)
+              </label>
+              <textarea
+                rows={2}
+                value={orderNote}
+                onChange={(e) => setOrderNote(e.target.value)}
+                placeholder="Örn: Levrek iyi pişsin, mezeler önden gelsin, rakı kadehleri soğuk olsun..."
+                className="w-full bg-[#10141D] border border-meyhane-border p-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-gold resize-none"
+              />
+            </div>
+
+            {/* Total & Submit Button */}
+            <div className="border-t border-meyhane-border/70 pt-3 space-y-3 flex-shrink-0">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-300 font-medium">Toplam Tutar:</span>
+                <span className="font-mono font-bold text-gold text-lg">
+                  ₺{totalCartPrice.toLocaleString('tr-TR')}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCartModal(false)}
+                  className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-gray-300 border border-meyhane-border transition-colors font-medium"
+                >
+                  Menüye Dön
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmittingOrder || cartEntries.length === 0}
+                  onClick={handleSubmitOrder}
+                  className="flex-[2] py-3 rounded-xl bg-gradient-to-r from-amber-600 via-gold to-amber-600 text-black font-bold text-xs uppercase tracking-wider hover:brightness-110 shadow-lg shadow-gold/25 transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isSubmittingOrder ? (
+                    <span>İletiliyor...</span>
+                  ) : (
+                    <>
+                      <Flame className="w-4 h-4" />
+                      <span>Siparişi Garsona İlet</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}

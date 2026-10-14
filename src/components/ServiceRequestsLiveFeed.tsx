@@ -15,23 +15,10 @@ import {
   Trash2
 } from 'lucide-react';
 import { playNotificationChime } from '@/lib/audioNotification';
-
-export interface ServiceRequestItem {
-  id: string;
-  tableId: string;
-  tableName: string;
-  sectionId?: string;
-  sectionName?: string;
-  type: 'waiter' | 'ice_water' | 'bill' | 'cutlery' | 'custom';
-  title: string;
-  note?: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  createdAt: string;
-  completedAt?: string;
-}
+import { ServiceRequest } from '@/lib/serviceRequestsStorage';
 
 export default function ServiceRequestsLiveFeed() {
-  const [requests, setRequests] = useState<ServiceRequestItem[]>([]);
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -45,7 +32,7 @@ export default function ServiceRequestsLiveFeed() {
       const res = await fetch('/api/service-requests');
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
-        const fetched: ServiceRequestItem[] = json.data;
+        const fetched: ServiceRequest[] = json.data;
         setRequests(fetched);
 
         // Check for new pending requests
@@ -207,6 +194,22 @@ export default function ServiceRequestsLiveFeed() {
                         {req.note && (
                           <div className="text-[11px] text-amber-300 font-medium mt-1">
                             Not: {req.note}
+                          </div>
+                        )}
+                        {req.items && req.items.length > 0 && (
+                          <div className="mt-1.5 p-2 rounded-lg bg-black/40 border border-amber-500/30 text-[11px] text-gray-200 space-y-1">
+                            <div className="font-semibold text-amber-300 flex items-center justify-between text-[11px]">
+                              <span>Sipariş Listesi ({req.items.length}):</span>
+                              {req.totalAmount && <span className="font-mono text-white">{req.totalAmount.toLocaleString('tr-TR')} ₺</span>}
+                            </div>
+                            <div className="space-y-0.5 max-h-24 overflow-y-auto">
+                              {req.items.map((it, idx) => (
+                                <div key={idx} className="flex justify-between text-[10px] text-gray-300">
+                                  <span>{it.quantity}x {it.name}</span>
+                                  {it.price && <span className="font-mono text-gray-400">{(it.price * it.quantity).toLocaleString('tr-TR')} ₺</span>}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>

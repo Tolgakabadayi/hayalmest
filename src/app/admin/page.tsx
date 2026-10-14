@@ -121,7 +121,8 @@ export default function AdminPage() {
   // User management state
   const [userAdmins, setUserAdmins] = useState<any[]>([]);
   const [userHosts, setUserHosts] = useState<any[]>([]);
-  const [showAddUserModal, setShowAddUserModal] = useState<'admin' | 'host' | null>(null);
+  const [userWaiters, setUserWaiters] = useState<any[]>([]);
+  const [showAddUserModal, setShowAddUserModal] = useState<'admin' | 'host' | 'waiter' | null>(null);
   const [newUserForm, setNewUserForm] = useState({ username: '', password: '', displayName: '', name: '', pin: '', permissions: ['reservations'] as string[] });
   const [userMsg, setUserMsg] = useState('');
 
@@ -181,6 +182,7 @@ export default function AdminPage() {
       if (usersRes?.success) {
         setUserAdmins(usersRes.admins || []);
         setUserHosts(usersRes.hosts || []);
+        setUserWaiters(usersRes.waiters || []);
       }
     } catch (err) {
       console.error('Data fetch error:', err);
@@ -2136,6 +2138,72 @@ export default function AdminPage() {
                 {userHosts.length === 0 && <p className="text-xs text-meyhane-muted italic">Henüz host eklenmemiş.</p>}
               </div>
             </div>
+
+            {/* Waiters List */}
+            <div className="space-y-3 pt-2 border-t border-meyhane-border/70">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Utensils className="w-3.5 h-3.5 text-gold" />
+                  Garson &amp; Servis Personeli
+                </h4>
+                <button
+                  onClick={() => { setShowAddUserModal('waiter'); setNewUserForm({ username: '', password: '', displayName: '', name: '', pin: '', permissions: [] }); }}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gold/10 hover:bg-gold/20 text-gold text-[11px] font-semibold border border-gold/30 transition-colors"
+                >
+                  <Plus className="w-3 h-3" /> Garson Ekle
+                </button>
+              </div>
+              <div className="space-y-2">
+                {userWaiters.map((waiter: any) => (
+                  <div key={waiter.id} className="flex items-center justify-between p-3 rounded-xl bg-meyhane-bg border border-meyhane-border hover:border-gold/30 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                        <Utensils className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-white">{waiter.name}</div>
+                        <div className="text-[10px] text-meyhane-muted">PIN: {'•'.repeat(waiter.pinLength || 4)} · {waiter.active !== false ? 'Aktif' : 'Pasif'}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          const newActive = waiter.active === false ? true : false;
+                          const res = await fetch('/api/admin/users', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ type: 'waiter', id: waiter.id, active: newActive }),
+                          });
+                          const json = await res.json();
+                          if (json.success) {
+                            setUserWaiters(prev => prev.map((w: any) => w.id === waiter.id ? { ...w, active: newActive } : w));
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors ${waiter.active !== false ? 'bg-emerald-500/15 text-emerald-400 hover:bg-red-500/15 hover:text-red-400' : 'bg-red-500/15 text-red-400 hover:bg-emerald-500/15 hover:text-emerald-400'}`}
+                      >
+                        {waiter.active !== false ? 'Pasife Al' : 'Aktife Al'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`${waiter.name} silinsin mi?`)) return;
+                          const res = await fetch(`/api/admin/users?type=waiter&id=${waiter.id}`, { method: 'DELETE' });
+                          const json = await res.json();
+                          if (json.success) {
+                            setUserWaiters(prev => prev.filter((w: any) => w.id !== waiter.id));
+                            setUserMsg('Garson silindi.');
+                            setTimeout(() => setUserMsg(''), 3000);
+                          }
+                        }}
+                        className="p-1.5 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {userWaiters.length === 0 && <p className="text-xs text-meyhane-muted italic">Henüz garson eklenmemiş.</p>}
+              </div>
+            </div>
           </div>
 
         </div>
@@ -3277,8 +3345,14 @@ export default function AdminPage() {
           <div className="luxury-card max-w-md w-full rounded-3xl p-6 sm:p-8 border border-gold/40 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-meyhane-border pb-3">
               <h2 className="text-base font-bold font-serif text-white flex items-center gap-2">
-                {showAddUserModal === 'admin' ? <ShieldCheck className="w-4 h-4 text-gold" /> : <UserCheck className="w-4 h-4 text-gold" />}
-                {showAddUserModal === 'admin' ? 'Yeni Yönetici Ekle' : 'Yeni Host Ekle'}
+                {showAddUserModal === 'admin' ? (
+                  <ShieldCheck className="w-4 h-4 text-gold" />
+                ) : showAddUserModal === 'host' ? (
+                  <UserCheck className="w-4 h-4 text-gold" />
+                ) : (
+                  <Utensils className="w-4 h-4 text-gold" />
+                )}
+                {showAddUserModal === 'admin' ? 'Yeni Yönetici Ekle' : showAddUserModal === 'host' ? 'Yeni Host Ekle' : 'Yeni Garson Ekle'}
               </h2>
               <button onClick={() => setShowAddUserModal(null)} className="text-gray-400 hover:text-white">✕</button>
             </div>
@@ -3289,7 +3363,9 @@ export default function AdminPage() {
                 try {
                   const body = showAddUserModal === 'admin'
                     ? { type: 'admin', username: newUserForm.username, password: newUserForm.password, displayName: newUserForm.displayName, permissions: newUserForm.permissions, createdBy: 'admin' }
-                    : { type: 'host', name: newUserForm.name, pin: newUserForm.pin, createdBy: 'admin' };
+                    : showAddUserModal === 'host'
+                    ? { type: 'host', name: newUserForm.name, pin: newUserForm.pin, createdBy: 'admin' }
+                    : { type: 'waiter', name: newUserForm.name, pin: newUserForm.pin, createdBy: 'admin' };
                   const res = await fetch('/api/admin/users', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3302,9 +3378,16 @@ export default function AdminPage() {
                     if (usersRes?.success) {
                       setUserAdmins(usersRes.admins || []);
                       setUserHosts(usersRes.hosts || []);
+                      setUserWaiters(usersRes.waiters || []);
                     }
                     setShowAddUserModal(null);
-                    setUserMsg(showAddUserModal === 'admin' ? 'Yönetici başarıyla eklendi.' : 'Host başarıyla eklendi.');
+                    setUserMsg(
+                      showAddUserModal === 'admin' 
+                        ? 'Yönetici başarıyla eklendi.' 
+                        : showAddUserModal === 'host' 
+                        ? 'Host başarıyla eklendi.' 
+                        : 'Garson başarıyla eklendi.'
+                    );
                     setTimeout(() => setUserMsg(''), 3000);
                   } else {
                     alert(json.error || 'Hata oluştu.');
@@ -3375,7 +3458,7 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </>
-              ) : (
+              ) : showAddUserModal === 'host' ? (
                 <>
                   <div className="space-y-1.5">
                     <label className="text-gray-300 font-semibold uppercase tracking-wider">Host Adı *</label>
@@ -3397,6 +3480,28 @@ export default function AdminPage() {
                     <p className="text-[10px] text-meyhane-muted">Host bu PIN ile giriş yapacaktır.</p>
                   </div>
                 </>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-gray-300 font-semibold uppercase tracking-wider">Garson Adı &amp; Ünvanı *</label>
+                    <input
+                      type="text" required value={newUserForm.name}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, name: e.target.value })}
+                      placeholder="Örn: Garson Mehmet / Şef Garson Ali"
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-gray-300 font-semibold uppercase tracking-wider">PIN Kodu * (4-6 Haneli)</label>
+                    <input
+                      type="text" required maxLength={6} value={newUserForm.pin}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, pin: e.target.value.replace(/\D/g, '') })}
+                      placeholder="Örn: 5678"
+                      className="w-full bg-meyhane-bg border border-meyhane-border p-2.5 rounded-xl text-white focus:border-gold focus:outline-none text-center tracking-[0.5em] text-lg font-mono"
+                    />
+                    <p className="text-[10px] text-meyhane-muted">Garson masabaşında bu PIN ile panele giriş yapacaktır.</p>
+                  </div>
+                </>
               )}
 
               <div className="flex gap-3 pt-2">
@@ -3411,7 +3516,7 @@ export default function AdminPage() {
                   type="submit"
                   className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-gold-500 via-gold to-gold-600 text-black text-xs font-bold uppercase tracking-wider hover:brightness-110 shadow-lg shadow-gold/25 transition-all"
                 >
-                  {showAddUserModal === 'admin' ? 'Yönetici Ekle' : 'Host Ekle'}
+                  {showAddUserModal === 'admin' ? 'Yönetici Ekle' : showAddUserModal === 'host' ? 'Host Ekle' : 'Garson Ekle'}
                 </button>
               </div>
             </form>

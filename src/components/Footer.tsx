@@ -164,6 +164,10 @@ export default function Footer() {
               <Link href="/host/login" className="text-meyhane-muted/40 hover:text-gray-400 text-[11px] transition-colors" title="Host Masası Girişi">
                 Host
               </Link>
+              <span className="text-meyhane-muted/30">·</span>
+              <Link href="/garson/login" className="text-meyhane-muted/40 hover:text-gray-400 text-[11px] transition-colors" title="Garson Paneli Girişi">
+                Garson
+              </Link>
             </div>
           </div>
         </div>

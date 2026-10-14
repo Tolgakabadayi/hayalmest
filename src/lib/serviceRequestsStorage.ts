@@ -1,6 +1,15 @@
 import { safeReadJson, safeWriteJson } from './safeStorage';
 
-export type ServiceRequestType = 'waiter' | 'ice_water' | 'bill' | 'cutlery' | 'custom';
+export type ServiceRequestType = 'waiter' | 'ice_water' | 'bill' | 'cutlery' | 'order' | 'custom';
+
+export interface OrderCartItem {
+  id: string;
+  name: string;
+  quantity: number;
+  price?: number;
+  category?: string;
+  note?: string;
+}
 
 export interface ServiceRequest {
   id: string;
@@ -11,6 +20,8 @@ export interface ServiceRequest {
   type: ServiceRequestType;
   title: string;
   note?: string;
+  items?: OrderCartItem[];
+  totalAmount?: number;
   status: 'pending' | 'in_progress' | 'completed';
   createdAt: string;
   completedAt?: string;
