@@ -655,8 +655,8 @@ export default function AdminPage() {
     return (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || '');
   });
 
-  // Group reservations by date for organized daily display
-  const groupedReservations = React.useMemo(() => {
+  // Group reservations by date for organized daily display (pure computation to respect Rules of Hooks)
+  const groupedReservations = (() => {
     const map = new Map<string, Reservation[]>();
     for (const r of filtered) {
       const list = map.get(r.date) || [];
@@ -671,7 +671,7 @@ export default function AdminPage() {
       dateStr: dateKey,
       items: map.get(dateKey) || [],
     }));
-  }, [filtered, showPastArchive]);
+  })();
 
   // Customer filtering & sorting
   const filteredCustomers = customers
