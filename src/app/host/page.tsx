@@ -45,8 +45,22 @@ export default function HostPanelPage() {
   const [spotlightTableId, setSpotlightTableId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilter, setDateFilter] = useState<'today' | 'tomorrow' | 'all' | 'custom'>('today');
-  const [customDate, setCustomDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [dateFilter, setDateFilter] = useState<'upcoming' | 'today' | 'tomorrow' | 'all' | 'custom'>('upcoming');
+
+  // Format local date YYYY-MM-DD
+  const formatLocalDateYMD = (d: Date = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const todayStr = formatLocalDateYMD();
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowStr = formatLocalDateYMD(tomorrowDate);
+
+  const [customDate, setCustomDate] = useState(todayStr);
   const [statusTab, setStatusTab] = useState<'all' | 'waiting' | 'seated'>('all');
   
   // Highlighted table modal for visual floor positioning
@@ -64,20 +78,43 @@ export default function HostPanelPage() {
   const [changingReservation, setChangingReservation] = useState<Reservation | null>(null);
   const [newTableSelection, setNewTableSelection] = useState('');
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  // Persistent local cache sync to prevent multi-instance serverless desync
+  const syncWithLocalCache = (serverList: Reservation[]): Reservation[] => {
+    try {
+      const deletedIds = new Set<string>(JSON.parse(localStorage.getItem('hayalmest_deleted_ids') || '[]'));
+      const cached = JSON.parse(localStorage.getItem('hayalmest_admin_res_cache') || '[]') as Reservation[];
+      
+      const map = new Map<string, Reservation>();
+      for (const r of cached) {
+        if (r && r.id && !deletedIds.has(r.id)) {
+          map.set(r.id, r);
+        }
+      }
+      for (const r of serverList) {
+        if (r && r.id && !deletedIds.has(r.id)) {
+          map.set(r.id, r);
+        }
+      }
+      const merged = Array.from(map.values());
+      localStorage.setItem('hayalmest_admin_res_cache', JSON.stringify(merged));
+      return merged;
+    } catch (e) {
+      return serverList;
+    }
+  };
 
   const fetchReservations = async () => {
     setLoading(true);
     try {
       const [resData, tablesData] = await Promise.all([
-        fetch('/api/reservations').then(r => r.json()).catch(() => ({})),
+        fetch(`/api/reservations?_t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
         fetch('/api/tables').then(r => r.json()).catch(() => ({})),
       ]);
       if (resData?.success && Array.isArray(resData.data)) {
-        setReservations(resData.data);
+        setReservations(syncWithLocalCache(resData.data));
+      } else {
+        const cached = JSON.parse(localStorage.getItem('hayalmest_admin_res_cache') || '[]');
+        if (cached?.length) setReservations(cached);
       }
       if (tablesData?.success) {
         if (tablesData.tables?.length) {
@@ -105,6 +142,12 @@ export default function HostPanelPage() {
     if (storedName) setHostName(storedName);
     setIsAuthenticated(true);
     fetchReservations();
+
+    // Auto-poll every 6 seconds for real-time hostess synchronization
+    const timer = setInterval(() => {
+      fetchReservations();
+    }, 6000);
+    return () => clearInterval(timer);
   }, [router]);
 
   // Update status (e.g. seated)
@@ -158,6 +201,11 @@ export default function HostPanelPage() {
     dateFilter === 'tomorrow' ? tomorrowStr :
     dateFilter === 'custom' ? customDate : null;
 
+  // Active future reservations
+  const activeUpcomingReservations = reservations.filter(r => r.date >= todayStr && r.status !== 'cancelled');
+  const todayReservationsCount = reservations.filter(r => r.date === todayStr && r.status !== 'cancelled').length;
+  const tomorrowReservationsCount = reservations.filter(r => r.date === tomorrowStr && r.status !== 'cancelled').length;
+
   // Filtered reservations
   const filtered = reservations.filter(r => {
     // 1. Search term match (PNR, Phone, Name)
@@ -171,8 +219,12 @@ export default function HostPanelPage() {
       cleanPhone.includes(cleanSearch) || 
       cleanName.includes(cleanSearch);
 
-    // 2. Date match
-    const matchesDate = !activeDate || r.date === activeDate;
+    // 2. Date match: Arama yapılıyorsa tarih filtresine takılmasın (kapıda anında bulunsun)
+    const matchesDate = cleanSearch ? true : (
+      dateFilter === 'all' ? true :
+      dateFilter === 'upcoming' ? r.date >= todayStr :
+      !activeDate || r.date === activeDate
+    );
 
     // 3. Status tab match
     const matchesStatus = 
@@ -181,10 +233,13 @@ export default function HostPanelPage() {
       r.status === 'seated';
 
     return matchesSearch && matchesDate && matchesStatus;
-  });
+  }).sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
 
-  // Today's summary stats
-  const activeDateReservations = reservations.filter(r => (!activeDate || r.date === activeDate) && r.status !== 'cancelled');
+  // Selected date summary stats
+  const activeDateReservations = reservations.filter(r => {
+    if (dateFilter === 'upcoming') return r.date >= todayStr && r.status !== 'cancelled';
+    return (!activeDate || r.date === activeDate) && r.status !== 'cancelled';
+  });
   const seatedCount = activeDateReservations.filter(r => r.status === 'seated').length;
   const waitingCount = activeDateReservations.filter(r => r.status === 'confirmed' || r.status === 'pending').length;
   const totalGuests = activeDateReservations.reduce((acc, curr) => acc + curr.guestCount, 0);
@@ -391,26 +446,51 @@ export default function HostPanelPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => setDateFilter('today')}
-                className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all ${
-                  dateFilter === 'today'
-                    ? 'bg-gold text-black shadow-md'
+                onClick={() => setDateFilter('upcoming')}
+                className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all flex items-center gap-1.5 ${
+                  dateFilter === 'upcoming'
+                    ? 'bg-gold text-black shadow-md font-bold'
                     : 'bg-white/5 text-gray-300 hover:bg-white/10'
                 }`}
               >
-                Bugün ({todayStr})
+                <span>Tüm Aktifler</span>
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-black/20 text-current font-bold">
+                  {activeUpcomingReservations.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDateFilter('today')}
+                className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all flex items-center gap-1.5 ${
+                  dateFilter === 'today'
+                    ? 'bg-gold text-black shadow-md font-bold'
+                    : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                }`}
+              >
+                <span>Bugün</span>
+                {todayReservationsCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-300 font-bold">
+                    {todayReservationsCount}
+                  </span>
+                )}
               </button>
 
               <button
                 type="button"
                 onClick={() => setDateFilter('tomorrow')}
-                className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all ${
+                className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all flex items-center gap-1.5 ${
                   dateFilter === 'tomorrow'
-                    ? 'bg-gold text-black shadow-md'
+                    ? 'bg-gold text-black shadow-md font-bold'
                     : 'bg-white/5 text-gray-300 hover:bg-white/10'
                 }`}
               >
-                Yarın ({tomorrowStr})
+                <span>Yarın</span>
+                {tomorrowReservationsCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-300 font-bold">
+                    {tomorrowReservationsCount}
+                  </span>
+                )}
               </button>
 
               <button
@@ -418,7 +498,7 @@ export default function HostPanelPage() {
                 onClick={() => setDateFilter('all')}
                 className={`px-3.5 py-1.5 rounded-xl font-semibold transition-all ${
                   dateFilter === 'all'
-                    ? 'bg-gold text-black shadow-md'
+                    ? 'bg-gold text-black shadow-md font-bold'
                     : 'bg-white/5 text-gray-300 hover:bg-white/10'
                 }`}
               >
@@ -495,7 +575,9 @@ export default function HostPanelPage() {
           </div>
           <div className="p-4 rounded-2xl bg-meyhane-surface border border-meyhane-border space-y-1">
             <span className="text-[11px] text-meyhane-muted uppercase tracking-wider block">Görüntülenen Tarih</span>
-            <div className="text-xl font-bold font-mono text-white">{activeDate || 'Tüm Tarihler'}</div>
+            <div className="text-xl font-bold font-mono text-white">
+              {dateFilter === 'upcoming' ? 'Gelecek Aktifler' : (activeDate || 'Tüm Tarihler')}
+            </div>
             <div className="text-[10px] text-gray-400">Canlı takip modu</div>
           </div>
         </div>
