@@ -85,6 +85,7 @@ export default function AdminPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [selectedDate, setSelectedDate] = useState<string>(() => formatLocalDateYMD());
+  const [showPastArchive, setShowPastArchive] = useState(false);
   const [showStats, setShowStats] = useState(true);
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
   const [showMobileTabMenu, setShowMobileTabMenu] = useState(false);
@@ -154,6 +155,31 @@ export default function AdminPage() {
     }
   }, [router]);
 
+  // Persistent local cache sync to prevent multi-instance serverless flickering
+  const syncWithLocalCache = (serverList: Reservation[]): Reservation[] => {
+    try {
+      const deletedIds = new Set<string>(JSON.parse(localStorage.getItem('hayalmest_deleted_ids') || '[]'));
+      const cached = JSON.parse(localStorage.getItem('hayalmest_admin_res_cache') || '[]') as Reservation[];
+      
+      const map = new Map<string, Reservation>();
+      for (const r of cached) {
+        if (r && r.id && !deletedIds.has(r.id)) {
+          map.set(r.id, r);
+        }
+      }
+      for (const r of serverList) {
+        if (r && r.id && !deletedIds.has(r.id)) {
+          map.set(r.id, r);
+        }
+      }
+      const merged = Array.from(map.values());
+      localStorage.setItem('hayalmest_admin_res_cache', JSON.stringify(merged));
+      return merged;
+    } catch (e) {
+      return serverList;
+    }
+  };
+
   // Initial Data Fetching
   const fetchAllData = async () => {
     setLoading(true);
@@ -168,7 +194,9 @@ export default function AdminPage() {
         fetch('/api/admin/users').then(r => r.json()).catch(() => ({})),
       ]);
 
-      if (resRes?.success) setReservations(resRes.data);
+      if (resRes?.success && Array.isArray(resRes.data)) {
+        setReservations(syncWithLocalCache(resRes.data));
+      }
       if (eventsRes?.success) setEvents(eventsRes.data);
       if (menuRes?.success) setMenuItems(menuRes.items);
       if (contentRes?.success) setSiteContent(contentRes.data);
@@ -307,7 +335,7 @@ export default function AdminPage() {
     }
   }, [isAuthenticated]);
 
-  // Real-time auto-sync for reservations (every 6 seconds)
+  // Real-time auto-sync for reservations (every 6 seconds) with local cache preservation
   useEffect(() => {
     if (!isAuthenticated) return;
     const interval = setInterval(async () => {
@@ -315,7 +343,7 @@ export default function AdminPage() {
         const res = await fetch(`/api/reservations?_t=${Date.now()}`, { cache: 'no-store' });
         const json = await res.json();
         if (json?.success && Array.isArray(json.data)) {
-          setReservations(json.data);
+          setReservations(syncWithLocalCache(json.data));
         }
       } catch (err) {
         // silent polling error suppression
@@ -339,7 +367,13 @@ export default function AdminPage() {
       });
       const json = await res.json();
       if (json.success) {
-        setReservations(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
+        setReservations(prev => {
+          const next = prev.map(r => r.id === id ? { ...r, status: newStatus } : r);
+          try {
+            localStorage.setItem('hayalmest_admin_res_cache', JSON.stringify(next));
+          } catch (e) {}
+          return next;
+        });
         fetchCustomers();
       }
     } catch (err) {
@@ -350,14 +384,61 @@ export default function AdminPage() {
   const handleDeleteReservation = async (id: string) => {
     if (!confirm('Bu rezervasyonu silmek istediğinize emin misiniz?')) return;
     try {
-      const res = await fetch(`/api/reservations/${id}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (json.success) {
-        setReservations(prev => prev.filter(r => r.id !== id));
-        fetchCustomers();
-      }
+      // 1. Immediately blacklist ID in localStorage so no stale server container can resurrect it
+      try {
+        const deletedIds = JSON.parse(localStorage.getItem('hayalmest_deleted_ids') || '[]');
+        if (!deletedIds.includes(id)) {
+          deletedIds.push(id);
+          localStorage.setItem('hayalmest_deleted_ids', JSON.stringify(deletedIds));
+        }
+      } catch (e) {}
+
+      // 2. Remove immediately from local state & cache
+      setReservations(prev => {
+        const next = prev.filter(r => r.id !== id);
+        try {
+          localStorage.setItem('hayalmest_admin_res_cache', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+
+      // 3. Notify server
+      await fetch(`/api/reservations/${id}`, { method: 'DELETE' });
+      fetchCustomers();
     } catch (err) {
       alert('Silme işlemi başarısız');
+    }
+  };
+
+  // Bulk clean all past reservations
+  const handleClearPastReservations = async () => {
+    if (!pastReservations.length) {
+      alert('Arşivde temizlenecek geçmiş rezervasyon bulunmuyor.');
+      return;
+    }
+    if (!confirm(`${pastReservations.length} adet geçmiş rezervasyon kaydını kalıcı olarak silmek istediğinize emin misiniz?`)) return;
+    try {
+      const pastIds = pastReservations.map(r => r.id);
+      try {
+        const deletedIds = JSON.parse(localStorage.getItem('hayalmest_deleted_ids') || '[]');
+        pastIds.forEach(id => {
+          if (!deletedIds.includes(id)) deletedIds.push(id);
+        });
+        localStorage.setItem('hayalmest_deleted_ids', JSON.stringify(deletedIds));
+      } catch (e) {}
+
+      setReservations(prev => {
+        const next = prev.filter(r => !pastIds.includes(r.id));
+        try {
+          localStorage.setItem('hayalmest_admin_res_cache', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+
+      await Promise.all(pastIds.map(id => fetch(`/api/reservations/${id}`, { method: 'DELETE' }).catch(() => ({}))));
+      alert('Geçmiş rezervasyonlar başarıyla temizlendi.');
+    } catch (err) {
+      alert('Temizleme sırasında hata oluştu.');
     }
   };
 
@@ -496,17 +577,30 @@ export default function AdminPage() {
 
   const todayStr = formatLocalDateYMD();
 
-  // Aktif Rezervasyonlar: Geçmişte onaylanmamış (pending) rezervasyonlar istatistiklerde ve aktif listede görünmemeli
-  const activeReservations = reservations.filter(r => !(r.status === 'pending' && r.date < todayStr));
+  // Aktif Rezervasyonlar: Bugünden ve ileri tarihlerdeki tüm rezervasyonlar (100% operasyon odaklı)
+  const activeReservations = reservations.filter(r => r.date >= todayStr);
+  
+  // Geçmiş / Arşiv Rezervasyonlar: Günü geçmiş tamamlanmış veya eski rezervasyonlar
+  const pastReservations = reservations.filter(r => r.date < todayStr);
 
   // Stats (Bugünden itibaren tutarlı istatistikler)
   const totalCount = activeReservations.length;
   // Onay Bekleyenler: SADECE bugünden itibaren olan ve teyit bekleyen rezervasyonlar
-  const pendingCount = reservations.filter(r => r.status === 'pending' && r.date >= todayStr).length;
-  const confirmedCount = reservations.filter(r => r.status === 'confirmed' && r.date >= todayStr).length;
-  const todayGuests = reservations
+  const pendingCount = activeReservations.filter(r => r.status === 'pending').length;
+  const confirmedCount = activeReservations.filter(r => r.status === 'confirmed').length;
+  const todayGuests = activeReservations
     .filter(r => r.date === todayStr && r.status !== 'cancelled')
     .reduce((acc, curr) => acc + curr.guestCount, 0);
+
+  // Helper to format Date banner title
+  const formatDateTitle = (dStr: string, tStr: string) => {
+    if (dStr === tStr) return 'Bugün • ' + new Date(dStr + 'T12:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' });
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomStr = formatLocalDateYMD(tomorrow);
+    if (dStr === tomStr) return 'Yarın • ' + new Date(dStr + 'T12:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' });
+    return new Date(dStr + 'T12:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' });
+  };
 
   // Helper to generate 7 days of the week with reservation counts (UTC+3 timezone safe)
   const getWeekDays = () => {
@@ -535,8 +629,11 @@ export default function AdminPage() {
 
   const weekDays = getWeekDays();
 
-  // Filtered reservations (Geçmiş onaylanmamış rezervasyonlar hariç)
-  const filtered = activeReservations.filter(r => {
+  // Kaynak liste: Arşiv modundaysa geçmiş rezervasyonlar, aksi halde sadece aktifler
+  const sourceList = showPastArchive ? pastReservations : activeReservations;
+
+  // Filtered reservations
+  const filtered = sourceList.filter(r => {
     const matchesSearch = 
       r.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       r.phone.includes(searchTerm) ||
@@ -544,13 +641,37 @@ export default function AdminPage() {
 
     const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
     const matchesDate = 
+      showPastArchive ||
       dateFilter === 'all' ||
       (dateFilter === 'today' && r.date === todayStr) ||
       (dateFilter === 'upcoming' && r.date >= todayStr) ||
       (dateFilter === 'specific' && r.date === selectedDate);
 
     return matchesSearch && matchesStatus && matchesDate;
+  }).sort((a, b) => {
+    if (showPastArchive) {
+      return (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || '');
+    }
+    return (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || '');
   });
+
+  // Group reservations by date for organized daily display
+  const groupedReservations = React.useMemo(() => {
+    const map = new Map<string, Reservation[]>();
+    for (const r of filtered) {
+      const list = map.get(r.date) || [];
+      list.push(r);
+      map.set(r.date, list);
+    }
+    const sortedDates = Array.from(map.keys()).sort((a, b) => {
+      if (showPastArchive) return b.localeCompare(a);
+      return a.localeCompare(b);
+    });
+    return sortedDates.map(dateKey => ({
+      dateStr: dateKey,
+      items: map.get(dateKey) || [],
+    }));
+  }, [filtered, showPastArchive]);
 
   // Customer filtering & sorting
   const filteredCustomers = customers
@@ -845,29 +966,48 @@ export default function AdminPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDateFilter('all')}
+                  onClick={() => {
+                    setShowPastArchive(false);
+                    setDateFilter('all');
+                  }}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                    dateFilter === 'all'
+                    !showPastArchive && dateFilter === 'all'
                       ? 'bg-gold text-black shadow-md'
                       : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10'
                   }`}
                 >
-                  Tüm Tarihler ({activeReservations.length})
+                  Tüm Aktifler ({activeReservations.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => {
+                    setShowPastArchive(false);
                     setDateFilter('today');
                     setSelectedDate(todayStr);
                     setFloorDate(todayStr);
                   }}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                    dateFilter === 'today'
+                    !showPastArchive && dateFilter === 'today'
                       ? 'bg-amber-500 text-black shadow-md font-bold'
                       : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10'
                   }`}
                 >
                   Bugün
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPastArchive(prev => !prev);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                    showPastArchive
+                      ? 'bg-purple-600 text-white shadow-md ring-2 ring-purple-400 font-bold'
+                      : 'bg-white/5 text-purple-300 hover:bg-purple-950/40 border border-purple-500/30'
+                  }`}
+                  title="Günü geçmiş tamamlanmış rezervasyonlar arşivi"
+                >
+                  <History className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Geçmiş / Arşiv ({pastReservations.length})</span>
                 </button>
                 <div className="flex items-center gap-1.5 bg-meyhane-bg px-2.5 py-1 rounded-xl border border-meyhane-border">
                   <span className="text-[11px] text-meyhane-muted">Tarihe Git:</span>
@@ -876,6 +1016,7 @@ export default function AdminPage() {
                     value={selectedDate}
                     suppressHydrationWarning={true}
                     onChange={(e) => {
+                      setShowPastArchive(false);
                       setSelectedDate(e.target.value);
                       setFloorDate(e.target.value);
                       setDateFilter('specific');
@@ -889,12 +1030,13 @@ export default function AdminPage() {
             {/* 7-day strip */}
             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 pt-1">
               {weekDays.map((day) => {
-                const isSelected = dateFilter === 'specific' && selectedDate === day.dateStr;
+                const isSelected = !showPastArchive && dateFilter === 'specific' && selectedDate === day.dateStr;
                 return (
                   <button
                     key={day.dateStr}
                     type="button"
                     onClick={() => {
+                      setShowPastArchive(false);
                       setSelectedDate(day.dateStr);
                       setFloorDate(day.dateStr);
                       setDateFilter('specific');
@@ -926,6 +1068,49 @@ export default function AdminPage() {
             </div>
           </div>
 
+          {/* GEÇMİŞ REZERVASYONLAR ARŞİV BİLGİ VE TEMİZLEME ÇUBUĞU */}
+          {showPastArchive && (
+            <div className="p-4 rounded-2xl bg-purple-950/40 border border-purple-500/40 flex flex-wrap items-center justify-between gap-3 shadow-lg animate-fadeIn">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 flex-shrink-0">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>Geçmiş Rezervasyonlar Arşivi</span>
+                    <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold border border-purple-500/30">
+                      {pastReservations.length} Kayıt
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-purple-200/70">
+                    Tarihi geçmiş rezervasyonlar burada güvenle saklanır. Günlük salon operasyonlarınızı kalabalıklaştırmaz.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPastArchive(false)}
+                  className="px-3 py-1.5 rounded-xl bg-gold text-black text-xs font-bold shadow-md hover:brightness-110 transition-all flex items-center gap-1.5"
+                >
+                  <span>← Aktif Günlere Dön</span>
+                </button>
+                {pastReservations.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearPastReservations}
+                    className="px-3 py-1.5 rounded-xl bg-red-600/20 hover:bg-red-600 border border-red-500/30 text-red-300 hover:text-white text-xs font-semibold transition-all flex items-center gap-1.5"
+                    title="Geçmiş arşivdeki tüm eski kayıtları kalıcı olarak temizler"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Geçmişi Temizle</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Filters Bar */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="relative w-full sm:w-72">
@@ -952,155 +1137,182 @@ export default function AdminPage() {
                 <option value="cancelled">İptal Edildi</option>
               </select>
 
-              <select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full sm:w-auto bg-meyhane-surface border border-meyhane-border px-3 py-2.5 rounded-xl text-xs text-white focus:border-gold focus:outline-none cursor-pointer"
-              >
-                <option value="all">Tüm Tarihler</option>
-                <option value="today">Sadece Bugün</option>
-                <option value="upcoming">Bugün ve Gelecek</option>
-                {dateFilter === 'specific' && (
-                  <option value="specific">Seçili Tarih: {selectedDate}</option>
-                )}
-              </select>
+              {!showPastArchive && (
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="w-full sm:w-auto bg-meyhane-surface border border-meyhane-border px-3 py-2.5 rounded-xl text-xs text-white focus:border-gold focus:outline-none cursor-pointer"
+                >
+                  <option value="all">Tüm Aktifler ({activeReservations.length})</option>
+                  <option value="today">Sadece Bugün</option>
+                  <option value="upcoming">Bugün ve Gelecek</option>
+                  {dateFilter === 'specific' && (
+                    <option value="specific">Seçili Tarih: {selectedDate}</option>
+                  )}
+                </select>
+              )}
             </div>
           </div>
 
           {/* 1. MOBILE RESERVATION CARDS (sm:hidden) */}
-          <div className="block sm:hidden space-y-3">
-            {filtered.length === 0 ? (
+          <div className="block sm:hidden space-y-4">
+            {groupedReservations.length === 0 ? (
               <div className="p-8 text-center text-gray-400 luxury-card rounded-2xl border border-meyhane-border">
-                Bu filtreye uygun rezervasyon bulunamadı.
+                {showPastArchive ? 'Arşivde geçmiş rezervasyon bulunamadı.' : 'Bu filtreye uygun aktif rezervasyon bulunamadı.'}
               </div>
             ) : (
-              filtered.map((res) => {
-                const isToday = res.date === todayStr;
-                return (
-                  <div
-                    key={res.id}
-                    onClick={() => setSelectedReservationModal(res)}
-                    className="luxury-card rounded-2xl border border-meyhane-border hover:border-gold/50 p-4 space-y-3 shadow-lg active:scale-[0.99] transition-all bg-gradient-to-br from-meyhane-surface to-black/40"
-                  >
-                    {/* Card Top: PNR + Today badge + Status */}
-                    <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-xs text-gold">#{res.pnr}</span>
-                        {isToday && (
-                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">
-                            BUGÜN
-                          </span>
-                        )}
-                      </div>
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        res.status === 'confirmed'
-                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                          : res.status === 'pending'
-                          ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                          : res.status === 'seated'
-                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                          : 'bg-red-500/15 text-red-400 border border-red-500/30'
-                      }`}>
-                        {res.status === 'confirmed' && 'Onaylandı'}
-                        {res.status === 'pending' && 'Onay Bekliyor'}
-                        {res.status === 'seated' && 'Masada'}
-                        {res.status === 'cancelled' && 'İptal'}
-                      </span>
-                    </div>
-
-                    {/* Card Body: Guest Name + Phone + Table Info */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <h3 className="font-bold text-white text-sm font-serif">{res.fullName}</h3>
-                        <span className="text-xs font-bold text-gold font-serif whitespace-nowrap">{res.guestCount} Kişi</span>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs text-gray-300">
-                        <div className="flex items-center gap-1.5 text-gold font-medium truncate">
-                          <Utensils className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span className="truncate">{formatTableDisplay(res.tableId, res.sectionId, tablesList)}</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-gray-400 text-[11px] flex-shrink-0">
-                          <Clock className="w-3 h-3 text-gold" />
-                          <span>{res.date} • {res.time}</span>
-                        </div>
-                      </div>
-
-                      {res.specialRequests && (
-                        <p className="text-[11px] text-amber-200/90 italic line-clamp-2 bg-black/30 p-2 rounded-lg border border-amber-500/20">
-                          &ldquo;{res.specialRequests}&rdquo;
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Card Actions: Quick Call, WhatsApp, Details & Statuses */}
-                    <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <a
-                          href={`tel:${res.phone}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-gold/20 text-gold text-xs font-semibold flex items-center gap-1 border border-white/10"
-                          title="Misafiri Ara"
-                        >
-                          <Phone className="w-3.5 h-3.5 text-gold" />
-                          <span className="text-[11px]">{res.phone}</span>
-                        </a>
-
-                        <a
-                          href={`https://wa.me/90${res.phone.replace(/[^0-9]/g, '').replace(/^0/, '')}?text=Merhaba%20Say%C4%B1n%20${encodeURIComponent(res.fullName)},%20HayalMest%20Anadolu%20Meyhanesi%20${res.date}%20tarihli%20saat%20${res.time}%20i%C3%A7in%20%23${res.pnr}%20kodlu%20${res.guestCount}%20ki%C5%9Filik%20rezervasyonunuz%20onaylanm%C4%B1%C5%9Ft%C4%B1r.%20Sizi%20a%C4%9F%C4%B1rlamaktan%20mutluluk%20duyaca%C4%9F%C4%B1z!`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="p-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors"
-                          title="WhatsApp Mesajı"
-                        >
-                          <MessageCircle className="w-4 h-4" />
-                        </a>
-                      </div>
-
-                      <div className="flex items-center gap-1">
-                        {res.status !== 'confirmed' && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStatusChange(res.id, 'confirmed');
-                            }}
-                            className="px-2 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 text-[11px] font-bold transition-colors"
-                            title="Onayla"
-                          >
-                            Onayla
-                          </button>
-                        )}
-                        {res.status !== 'seated' && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStatusChange(res.id, 'seated');
-                            }}
-                            className="px-2 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 text-[11px] font-bold transition-colors"
-                            title="Masada"
-                          >
-                            Masada
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedReservationModal(res);
-                          }}
-                          className="p-1.5 rounded-lg bg-gold/15 text-gold hover:bg-gold hover:text-black transition-colors"
-                          title="Detay"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
+              groupedReservations.map((group) => (
+                <div key={group.dateStr} className="space-y-2.5">
+                  <div className="flex items-center justify-between px-2 pt-2 pb-1 border-b border-gold/25">
+                    <span className="text-xs font-bold text-gold font-serif flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-gold" />
+                      {formatDateTitle(group.dateStr, todayStr)}
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-mono">
+                      {group.items.length} Rez ({group.items.reduce((sum, r) => sum + r.guestCount, 0)}p)
+                    </span>
                   </div>
-                );
-              })
+
+                  <div className="space-y-2.5">
+                    {group.items.map((res) => {
+                      const isToday = res.date === todayStr;
+                      return (
+                        <div
+                          key={res.id}
+                          onClick={() => setSelectedReservationModal(res)}
+                          className="luxury-card rounded-2xl border border-meyhane-border hover:border-gold/50 p-4 space-y-3 shadow-lg active:scale-[0.99] transition-all bg-gradient-to-br from-meyhane-surface to-black/40"
+                        >
+                          {/* Card Top: PNR + Today badge + Status */}
+                          <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-xs text-gold">#{res.pnr}</span>
+                              {isToday && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">
+                                  BUGÜN
+                                </span>
+                              )}
+                            </div>
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              res.status === 'confirmed'
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : res.status === 'pending'
+                                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                : res.status === 'seated'
+                                ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                                : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                            }`}>
+                              {res.status === 'confirmed' && 'Onaylandı'}
+                              {res.status === 'pending' && 'Onay Bekliyor'}
+                              {res.status === 'seated' && 'Masada'}
+                              {res.status === 'cancelled' && 'İptal'}
+                            </span>
+                          </div>
+
+                          {/* Card Body: Guest Name + Phone + Table Info */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <h3 className="font-bold text-white text-sm font-serif">{res.fullName}</h3>
+                              <span className="text-xs font-bold text-gold font-serif whitespace-nowrap">{res.guestCount} Kişi</span>
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs text-gray-300">
+                              <div className="flex items-center gap-1.5 text-gold font-medium truncate">
+                                <Utensils className="w-3.5 h-3.5 flex-shrink-0" />
+                                <span className="truncate">{formatTableDisplay(res.tableId, res.sectionId, tablesList)}</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-gray-400 text-[11px] flex-shrink-0">
+                                <Clock className="w-3 h-3 text-gold" />
+                                <span>{res.date} • {res.time}</span>
+                              </div>
+                            </div>
+
+                            {res.specialRequests && (
+                              <p className="text-[11px] text-amber-200/90 italic line-clamp-2 bg-black/30 p-2 rounded-lg border border-amber-500/20">
+                                &ldquo;{res.specialRequests}&rdquo;
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Card Actions */}
+                          <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <a
+                                href={`tel:${res.phone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-2 rounded-xl bg-white/5 hover:bg-gold/20 text-gray-300 hover:text-gold transition-colors"
+                                title="Ara"
+                              >
+                                <Phone className="w-3.5 h-3.5" />
+                              </a>
+                              <a
+                                href={`https://wa.me/90${res.phone.replace(/[^0-9]/g, '').replace(/^0/, '')}?text=Merhaba%20Say%C4%B1n%20${encodeURIComponent(res.fullName)},%20HayalMest%20Anadolu%20Meyhanesi%20${res.date}%20tarihli%20saat%20${res.time}%20i%C3%A7in%20%23${res.pnr}%20kodlu%20${res.guestCount}%20ki%C5%9Filik%20rezervasyonunuz%20onaylanm%C4%B1%C5%9Ft%C4%B1r.%20Sizi%20a%C4%9F%C4%B1rlamaktan%20mutluluk%20duyaca%C4%9F%C4%B1z!`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-colors"
+                                title="WhatsApp"
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteReservation(res.id);
+                                }}
+                                className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+                                title="Sil"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              {res.status !== 'confirmed' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStatusChange(res.id, 'confirmed');
+                                  }}
+                                  className="px-2 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 text-[11px] font-bold transition-colors"
+                                  title="Onayla"
+                                >
+                                  Onayla
+                                </button>
+                              )}
+                              {res.status !== 'seated' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStatusChange(res.id, 'seated');
+                                  }}
+                                  className="px-2 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 text-[11px] font-bold transition-colors"
+                                  title="Masada"
+                                >
+                                  Masada
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedReservationModal(res);
+                                }}
+                                className="p-1.5 rounded-lg bg-gold/15 text-gold hover:bg-gold hover:text-black transition-colors"
+                                title="Detay"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
             )}
           </div>
 
@@ -1119,171 +1331,207 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-meyhane-border/50 text-gray-300">
-                  {filtered.length === 0 ? (
+                  {groupedReservations.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-gray-400">
-                        Bu filtreye uygun rezervasyon bulunamadı.
+                      <td colSpan={6} className="py-12 text-center text-gray-400">
+                        <div className="flex flex-col items-center justify-center gap-2">
+                          <Calendar className="w-8 h-8 text-gray-600 mb-1" />
+                          <span className="text-sm font-medium">Bu filtreye uygun rezervasyon bulunamadı.</span>
+                          <span className="text-xs text-gray-500">Farklı bir gün veya filtre seçmeyi deneyin.</span>
+                        </div>
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((res) => {
-                      const isToday = res.date === todayStr;
+                    groupedReservations.map((group) => {
+                      const isGroupToday = group.dateStr === todayStr;
+                      const totalGuests = group.items.reduce((sum, r) => sum + r.guestCount, 0);
 
                       return (
-                        <tr 
-                          key={res.id} 
-                          onClick={() => setSelectedReservationModal(res)}
-                          className="hover:bg-white/[0.04] transition-colors cursor-pointer group"
-                          title="Detaylı bilgi ve masa değişikliği için tıklayın"
-                        >
-                          <td className="py-4 px-4 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-gold group-hover:underline">
-                                {res.pnr}
-                              </span>
-                              {isToday && (
-                                <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold">
-                                  BUGÜN
-                                </span>
-                              )}
-                            </div>
-                            <div className="font-semibold text-white text-sm">{res.fullName}</div>
-                            <div className="flex items-center gap-2">
-                              <a 
-                                href={`tel:${res.phone}`} 
-                                onClick={(e) => e.stopPropagation()}
-                                className="hover:text-gold flex items-center gap-1 text-[11px] text-meyhane-muted"
+                        <React.Fragment key={group.dateStr}>
+                          {/* Day Divider Header Row */}
+                          <tr className="bg-[#101422] border-y border-meyhane-border/70 text-gray-300">
+                            <td colSpan={6} className="py-2.5 px-4">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-2 h-2 rounded-full ${isGroupToday ? 'bg-amber-400 animate-pulse' : 'bg-gold/70'}`}></span>
+                                  <span className="text-white text-xs font-bold tracking-wide">
+                                    {formatDateTitle(group.dateStr, todayStr)}
+                                  </span>
+                                  {isGroupToday && (
+                                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold">
+                                      BUGÜN
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] font-mono text-gray-400">
+                                  {group.items.length} Rezervasyon • {totalGuests} Misafir
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Reservation Rows for This Date */}
+                          {group.items.map((res) => {
+                            const isToday = res.date === todayStr;
+
+                            return (
+                              <tr 
+                                key={res.id} 
+                                onClick={() => setSelectedReservationModal(res)}
+                                className="hover:bg-white/[0.04] transition-colors cursor-pointer group"
+                                title="Detaylı bilgi ve masa değişikliği için tıklayın"
                               >
-                                <Phone className="w-3 h-3 text-gold" />
-                                {res.phone}
-                              </a>
-                            </div>
-                          </td>
+                                <td className="py-4 px-4 space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono font-bold text-gold group-hover:underline">
+                                      #{res.pnr}
+                                    </span>
+                                    {isToday && (
+                                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-bold">
+                                        BUGÜN
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="font-semibold text-white text-sm">{res.fullName}</div>
+                                  <div className="flex items-center gap-2">
+                                    <a 
+                                      href={`tel:${res.phone}`} 
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="hover:text-gold flex items-center gap-1 text-[11px] text-meyhane-muted"
+                                    >
+                                      <Phone className="w-3 h-3 text-gold" />
+                                      {res.phone}
+                                    </a>
+                                  </div>
+                                </td>
 
-                          <td className="py-4 px-4 space-y-1">
-                            <div className="font-semibold text-white">{res.date}</div>
-                            <div className="text-gray-400 flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-gold" />
-                              <span>{res.time}</span>
-                            </div>
-                            <div className="text-[10px] text-meyhane-muted">{res.serviceType}</div>
-                          </td>
+                                <td className="py-4 px-4 space-y-1">
+                                  <div className="font-semibold text-white">{res.date}</div>
+                                  <div className="text-gray-400 flex items-center gap-1">
+                                    <Clock className="w-3 h-3 text-gold" />
+                                    <span>{res.time}</span>
+                                  </div>
+                                  <div className="text-[10px] text-meyhane-muted">{res.serviceType}</div>
+                                </td>
 
-                          <td className="py-4 px-4 space-y-1">
-                            <div className="font-bold text-white text-sm">{res.guestCount} Kişi</div>
-                            <div className="text-gold text-[11px] font-semibold">
-                              {formatTableDisplay(res.tableId, res.sectionId, tablesList)}
-                            </div>
-                            <div className="text-[10px] text-gray-400">{res.occasion}</div>
-                          </td>
+                                <td className="py-4 px-4 space-y-1">
+                                  <div className="font-bold text-white text-sm">{res.guestCount} Kişi</div>
+                                  <div className="text-gold text-[11px] font-semibold">
+                                    {formatTableDisplay(res.tableId, res.sectionId, tablesList)}
+                                  </div>
+                                  <div className="text-[10px] text-gray-400">{res.occasion}</div>
+                                </td>
 
-                          <td className="py-4 px-4 max-w-xs space-y-1">
-                            <span className="inline-block px-2 py-0.5 rounded bg-white/5 border border-meyhane-border text-[10px] font-medium text-gray-300">
-                              {res.packageId === 'premium_fix' ? 'Premium Rakı Menü' : res.packageId === 'standart_fix' ? 'Klasik Fiks' : 'A La Carte'}
-                            </span>
-                            {res.specialRequests && (
-                              <p className="text-[11px] text-amber-200/90 italic line-clamp-2">
-                                &ldquo;{res.specialRequests}&rdquo;
-                              </p>
-                            )}
-                          </td>
+                                <td className="py-4 px-4 max-w-xs space-y-1">
+                                  <span className="inline-block px-2 py-0.5 rounded bg-white/5 border border-meyhane-border text-[10px] font-medium text-gray-300">
+                                    {res.packageId === 'premium_fix' ? 'Premium Rakı Menü' : res.packageId === 'standart_fix' ? 'Klasik Fiks' : 'A La Carte'}
+                                  </span>
+                                  {res.specialRequests && (
+                                    <p className="text-[11px] text-amber-200/90 italic line-clamp-2">
+                                      &ldquo;{res.specialRequests}&rdquo;
+                                    </p>
+                                  )}
+                                </td>
 
-                          <td className="py-4 px-4">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              res.status === 'confirmed'
-                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                                : res.status === 'pending'
-                                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                                : res.status === 'seated'
-                                ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                                : 'bg-red-500/15 text-red-400 border border-red-500/30'
-                            }`}>
-                              {res.status === 'confirmed' && 'Onaylandı'}
-                              {res.status === 'pending' && 'Onay Bekliyor'}
-                              {res.status === 'seated' && 'Masada'}
-                              {res.status === 'cancelled' && 'İptal'}
-                            </span>
-                          </td>
+                                <td className="py-4 px-4">
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                    res.status === 'confirmed'
+                                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                      : res.status === 'pending'
+                                      ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                      : res.status === 'seated'
+                                      ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                                      : 'bg-red-500/15 text-red-400 border border-red-500/30'
+                                  }`}>
+                                    {res.status === 'confirmed' && 'Onaylandı'}
+                                    {res.status === 'pending' && 'Onay Bekliyor'}
+                                    {res.status === 'seated' && 'Masada'}
+                                    {res.status === 'cancelled' && 'İptal'}
+                                  </span>
+                                </td>
 
-                          <td className="py-4 px-4 text-right space-x-1">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedReservationModal(res);
-                              }}
-                              className="inline-flex p-1.5 rounded-lg bg-gold/15 text-gold hover:bg-gold hover:text-black transition-colors"
-                              title="Tüm Detayları Gör & Düzenle"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                            </button>
+                                <td className="py-4 px-4 text-right space-x-1">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedReservationModal(res);
+                                    }}
+                                    className="inline-flex p-1.5 rounded-lg bg-gold/15 text-gold hover:bg-gold hover:text-black transition-colors"
+                                    title="Tüm Detayları Gör & Düzenle"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
 
-                            <a
-                              href={`https://wa.me/90${res.phone.replace(/[^0-9]/g, '').replace(/^0/, '')}?text=Merhaba%20Say%C4%B1n%20${encodeURIComponent(res.fullName)},%20HayalMest%20Anadolu%20Meyhanesi%20${res.date}%20tarihli%20saat%20${res.time}%20i%C3%A7in%20%23${res.pnr}%20kodlu%20${res.guestCount}%20ki%C5%9Filik%20rezervasyonunuz%20onaylanm%C4%B1%C5%9Ft%C4%B1r.%20Sizi%20a%C4%9F%C4%B1rlamaktan%20mutluluk%20duyaca%C4%9F%C4%B1z!`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex p-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors"
-                              title="WhatsApp Onay Mesajı Gönder"
-                            >
-                              <MessageCircle className="w-3.5 h-3.5" />
-                            </a>
+                                  <a
+                                    href={`https://wa.me/90${res.phone.replace(/[^0-9]/g, '').replace(/^0/, '')}?text=Merhaba%20Say%C4%B1n%20${encodeURIComponent(res.fullName)},%20HayalMest%20Anadolu%20Meyhanesi%20${res.date}%20tarihli%20saat%20${res.time}%20i%C3%A7in%20%23${res.pnr}%20kodlu%20${res.guestCount}%20ki%C5%9Filik%20rezervasyonunuz%20onaylanm%C4%B1%C5%9Ft%C4%B1r.%20Sizi%20a%C4%9F%C4%B1rlamaktan%20mutluluk%20duyaca%C4%9F%C4%B1z!`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="inline-flex p-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors"
+                                    title="WhatsApp Onay Mesajı Gönder"
+                                  >
+                                    <MessageCircle className="w-3.5 h-3.5" />
+                                  </a>
 
-                            {res.status !== 'confirmed' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStatusChange(res.id, 'confirmed');
-                                }}
-                                className="p-1.5 rounded-lg bg-white/5 hover:bg-emerald-500/20 text-gray-300 hover:text-emerald-400 transition-colors"
-                                title="Onayla"
-                              >
-                                <CheckCircle className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                                  {res.status !== 'confirmed' && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStatusChange(res.id, 'confirmed');
+                                      }}
+                                      className="p-1.5 rounded-lg bg-white/5 hover:bg-emerald-500/20 text-gray-300 hover:text-emerald-400 transition-colors"
+                                      title="Onayla"
+                                    >
+                                      <CheckCircle className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
 
-                            {res.status !== 'seated' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStatusChange(res.id, 'seated');
-                                }}
-                                className="p-1.5 rounded-lg bg-white/5 hover:bg-blue-500/20 text-gray-300 hover:text-blue-400 transition-colors"
-                                title="Masaya Oturdu"
-                              >
-                                <Utensils className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                                  {res.status !== 'seated' && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStatusChange(res.id, 'seated');
+                                      }}
+                                      className="p-1.5 rounded-lg bg-white/5 hover:bg-blue-500/20 text-gray-300 hover:text-blue-400 transition-colors"
+                                      title="Masaya Oturdu"
+                                    >
+                                      <Utensils className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
 
-                            {res.status !== 'cancelled' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStatusChange(res.id, 'cancelled');
-                                }}
-                                className="p-1.5 rounded-lg bg-white/5 hover:bg-amber-500/20 text-gray-300 hover:text-amber-400 transition-colors"
-                                title="İptal Et"
-                              >
-                                <XCircle className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                                  {res.status !== 'cancelled' && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStatusChange(res.id, 'cancelled');
+                                      }}
+                                      className="p-1.5 rounded-lg bg-white/5 hover:bg-amber-500/20 text-gray-300 hover:text-amber-400 transition-colors"
+                                      title="İptal Et"
+                                    >
+                                      <XCircle className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
 
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteReservation(res.id);
-                              }}
-                              className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors"
-                              title="Kaydı Sil"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteReservation(res.id);
+                                    }}
+                                    className="p-1.5 rounded-lg bg-white/5 hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors"
+                                    title="Kaydı Sil"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
                       );
                     })
                   )}

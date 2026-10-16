@@ -3,18 +3,59 @@ import path from 'path';
 
 // Memory cache to guarantee data availability across calls in current runtime
 const memoryStore: Record<string, any> = {};
+const deletedIdsStore: Record<string, Set<string>> = {};
+
+/**
+ * Tracks deleted item IDs permanently so they are never resurrected
+ * even if present in the build-time static local file.
+ */
+export function recordDeletedId(fileName: string, id: string): void {
+  if (!deletedIdsStore[fileName]) {
+    deletedIdsStore[fileName] = new Set<string>();
+  }
+  deletedIdsStore[fileName].add(id);
+
+  try {
+    const tmpDir = path.join('/tmp', 'hayalmest_data');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    const delPath = path.join(tmpDir, `deleted_${fileName}`);
+    fs.writeFileSync(delPath, JSON.stringify(Array.from(deletedIdsStore[fileName])), 'utf-8');
+  } catch (err) {
+    // Ignore tmp write errors
+  }
+}
+
+export function getDeletedIds(fileName: string): Set<string> {
+  if (!deletedIdsStore[fileName]) {
+    deletedIdsStore[fileName] = new Set<string>();
+    try {
+      const delPath = path.join('/tmp', 'hayalmest_data', `deleted_${fileName}`);
+      if (fs.existsSync(delPath)) {
+        const raw = fs.readFileSync(delPath, 'utf-8');
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          list.forEach((id: string) => deletedIdsStore[fileName].add(id));
+        }
+      }
+    } catch (err) {
+      // Ignore tmp read errors
+    }
+  }
+  return deletedIdsStore[fileName];
+}
 
 /**
  * Safely reads a JSON file from disk.
  * Checks both /tmp (where serverless writes persist) and local project data directory,
  * compares modification times (mtimeMs) to pick the newest copy,
- * and falls back to memoryStore or defaultData.
+ * excludes deleted IDs, and falls back to memoryStore or defaultData.
  */
 export function safeReadJson<T>(fileName: string, defaultData: T): T {
   let tmpData: T | null = null;
   let tmpMtime = 0;
   let localData: T | null = null;
   let localMtime = 0;
+  const deletedSet = getDeletedIds(fileName);
 
   // 1. Check /tmp directory (where runtime writes happen on Vercel/serverless)
   try {
@@ -46,13 +87,17 @@ export function safeReadJson<T>(fileName: string, defaultData: T): T {
   let newestData: T | null = null;
   if (tmpData !== null && localData !== null) {
     if (Array.isArray(tmpData) && Array.isArray(localData)) {
-      // Merge by unique 'id' preserving both pre-seeded data and runtime writes
+      // Merge by unique 'id' preserving runtime writes while skipping deleted IDs
       const mergedMap = new Map<string, any>();
       for (const item of localData) {
-        if (item && item.id) mergedMap.set(item.id, item);
+        if (item && item.id && !deletedSet.has(item.id)) {
+          mergedMap.set(item.id, item);
+        }
       }
       for (const item of tmpData) {
-        if (item && item.id) mergedMap.set(item.id, item);
+        if (item && item.id && !deletedSet.has(item.id)) {
+          mergedMap.set(item.id, item);
+        }
       }
       newestData = Array.from(mergedMap.values()) as unknown as T;
     } else {
@@ -62,6 +107,11 @@ export function safeReadJson<T>(fileName: string, defaultData: T): T {
     newestData = tmpData;
   } else if (localData !== null) {
     newestData = localData;
+  }
+
+  // Double check deletion filter on resulting array
+  if (Array.isArray(newestData)) {
+    newestData = (newestData as any[]).filter(item => !item || !item.id || !deletedSet.has(item.id)) as unknown as T;
   }
 
   // If valid data found from disk

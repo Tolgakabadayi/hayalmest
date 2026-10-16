@@ -1,4 +1,4 @@
-import { safeReadJson, safeWriteJson } from './safeStorage';
+import { safeReadJson, safeWriteJson, recordDeletedId } from './safeStorage';
 
 export interface Reservation {
   id: string;
@@ -137,11 +137,10 @@ export function updateReservation(id: string, updates: Partial<Reservation>): Re
 }
 
 export function deleteReservation(id: string): boolean {
+  recordDeletedId(FILE_NAME, id);
   let reservations = getReservations();
   const initialLen = reservations.length;
   reservations = reservations.filter(r => r.id !== id);
-  if (reservations.length === initialLen) return false;
-
   safeWriteJson(FILE_NAME, reservations);
   return true;
 }
