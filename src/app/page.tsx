@@ -25,13 +25,13 @@ import {
 import { StageEvent, STAGE_EVENTS as FALLBACK_EVENTS } from '@/data/eventsData';
 import { VENUE_SECTIONS, TableSection } from '@/data/tablesData';
 import { REVIEWS_DATA } from '@/data/reviewsData';
-import { getNextEventDate } from '@/lib/dateUtils';
+import { getNextEventDate, formatLocalDateYMD } from '@/lib/dateUtils';
 
 export default function HomePage() {
   const router = useRouter();
   const [quickDate, setQuickDate] = useState('');
   useEffect(() => {
-    setQuickDate(new Date().toISOString().split('T')[0]);
+    setQuickDate(formatLocalDateYMD());
   }, []);
   const [quickGuests, setQuickGuests] = useState('4');
   const [quickSection, setQuickSection] = useState('vip_sahne');

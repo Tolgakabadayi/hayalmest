@@ -60,6 +60,7 @@ import InteractiveFloorPlan from '@/components/InteractiveFloorPlan';
 import { VenueElement } from '@/lib/tablesStorage';
 import ServiceRequestsLiveFeed from '@/components/ServiceRequestsLiveFeed';
 import TableQrCodeModal from '@/components/TableQrCodeModal';
+import { formatLocalDateYMD } from '@/lib/dateUtils';
 
 export default function AdminPage() {
   const router = useRouter();
@@ -83,7 +84,7 @@ export default function AdminPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
-  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(() => formatLocalDateYMD());
   const [showStats, setShowStats] = useState(true);
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
   const [showMobileTabMenu, setShowMobileTabMenu] = useState(false);
@@ -91,7 +92,7 @@ export default function AdminPage() {
   // Modals & Floor inspection state
   const [selectedReservationModal, setSelectedReservationModal] = useState<Reservation | null>(null);
   const [selectedFloorTable, setSelectedFloorTable] = useState<TableItem | null>(null);
-  const [floorDate, setFloorDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [floorDate, setFloorDate] = useState<string>(() => formatLocalDateYMD());
   const [floorViewMode, setFloorViewMode] = useState<'canvas' | 'list'>('canvas');
 
   // Dynamic tables & elements
@@ -132,7 +133,7 @@ export default function AdminPage() {
     fullName: '',
     phone: '',
     email: '',
-    date: new Date().toISOString().split('T')[0],
+    date: formatLocalDateYMD(),
     time: '20:00',
     serviceType: 'Canlı Fasıl Akşamı',
     guestCount: 4,
@@ -158,7 +159,7 @@ export default function AdminPage() {
     setLoading(true);
     try {
       const [resRes, eventsRes, menuRes, contentRes, tablesRes, custRes, usersRes] = await Promise.all([
-        fetch('/api/reservations').then(r => r.json()).catch(() => ({})),
+        fetch(`/api/reservations?_t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
         fetch('/api/events').then(r => r.json()).catch(() => ({})),
         fetch('/api/menu').then(r => r.json()).catch(() => ({})),
         fetch('/api/content').then(r => r.json()).catch(() => ({})),
@@ -235,7 +236,7 @@ export default function AdminPage() {
       fullName: cust.fullName,
       phone: cust.phone,
       email: cust.email || '',
-      date: new Date().toISOString().split('T')[0],
+      date: formatLocalDateYMD(),
       time: '20:00',
       serviceType: 'Canlı Fasıl Akşamı',
       guestCount: 4,
@@ -304,6 +305,23 @@ export default function AdminPage() {
     if (isAuthenticated) {
       fetchAllData();
     }
+  }, [isAuthenticated]);
+
+  // Real-time auto-sync for reservations (every 6 seconds)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/reservations?_t=${Date.now()}`, { cache: 'no-store' });
+        const json = await res.json();
+        if (json?.success && Array.isArray(json.data)) {
+          setReservations(json.data);
+        }
+      } catch (err) {
+        // silent polling error suppression
+      }
+    }, 6000);
+    return () => clearInterval(interval);
   }, [isAuthenticated]);
 
   const handleLogout = () => {
@@ -476,7 +494,7 @@ export default function AdminPage() {
     return <div className="p-12 text-center text-gold">Yükleniyor...</div>;
   }
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = formatLocalDateYMD();
 
   // Aktif Rezervasyonlar: Geçmişte onaylanmamış (pending) rezervasyonlar istatistiklerde ve aktif listede görünmemeli
   const activeReservations = reservations.filter(r => !(r.status === 'pending' && r.date < todayStr));
@@ -490,10 +508,11 @@ export default function AdminPage() {
     .filter(r => r.date === todayStr && r.status !== 'cancelled')
     .reduce((acc, curr) => acc + curr.guestCount, 0);
 
-  // Helper to generate 7 days of the week with reservation counts
+  // Helper to generate 7 days of the week with reservation counts (UTC+3 timezone safe)
   const getWeekDays = () => {
     const days = [];
     const curr = new Date();
+    curr.setHours(12, 0, 0, 0); // Noon anchor prevents midnight UTC shifts
     const dayOfWeek = curr.getDay(); // 0 is Sunday, 1 is Monday...
     const mondayDiff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
     const monday = new Date(curr);
@@ -502,7 +521,7 @@ export default function AdminPage() {
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = formatLocalDateYMD(d);
       const dayName = d.toLocaleDateString('tr-TR', { weekday: 'short' });
       const dayDisplay = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
       const resCount = activeReservations.filter(r => r.date === dateStr && r.status !== 'cancelled').length;
@@ -815,6 +834,15 @@ export default function AdminPage() {
                 <span>Haftalık &amp; Günlük Rezervasyon Takvimi</span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fetchAllData()}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 flex items-center gap-1.5 border border-white/10 transition-all active:scale-95"
+                  title="Listeyi ve Takvimi Yenile"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-gold ${loading ? 'animate-spin' : ''}`} />
+                  <span>Yenile</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setDateFilter('all')}

@@ -251,5 +251,23 @@
     "packageId": "alacarte",
     "specialRequests": "Sessiz ve şık bir masa rica ediyoruz.",
     "status": "confirmed"
+  },
+  {
+    "id": "res-1792164720978",
+    "pnr": "HM-9338",
+    "createdAt": "2026-10-16T15:30:00.000Z",
+    "fullName": "tolga",
+    "phone": "0545 884 18 19",
+    "email": "",
+    "date": "2026-10-17",
+    "time": "19:30",
+    "serviceType": "Canlı Fasıl Gecesi",
+    "guestCount": 8,
+    "occasion": "Arkadaş Buluşması",
+    "sectionId": "salon",
+    "tableId": "t-1790509423741",
+    "packageId": "standart_fix",
+    "specialRequests": "",
+    "status": "pending"
   }
 ]

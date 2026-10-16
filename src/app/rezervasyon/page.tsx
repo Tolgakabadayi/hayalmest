@@ -28,7 +28,7 @@ import {
 import { VENUE_SECTIONS, FIX_PACKAGES, ALL_TABLES, TableItem } from '@/data/tablesData';
 import { StageEvent } from '@/data/eventsData';
 import { formatTableDisplay, setRegisteredTables } from '@/lib/formatters';
-import { getNextEventDate } from '@/lib/dateUtils';
+import { getNextEventDate, formatLocalDateYMD } from '@/lib/dateUtils';
 import SeatingFloorPlan from '@/components/SeatingFloorPlan';
 import InteractiveFloorPlan from '@/components/InteractiveFloorPlan';
 import { VenueElement } from '@/lib/tablesStorage';
@@ -42,7 +42,7 @@ function ReservationContent() {
 
   // Form State
   const [date, setDate] = useState(() => {
-    return searchParams.get('date') || new Date().toISOString().split('T')[0];
+    return searchParams.get('date') || formatLocalDateYMD();
   });
   const [time, setTime] = useState('20:00');
   const [serviceType, setServiceType] = useState('Canlı Fasıl Akşamı (20:00)');

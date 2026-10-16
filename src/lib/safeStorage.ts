@@ -45,7 +45,19 @@ export function safeReadJson<T>(fileName: string, defaultData: T): T {
   // 3. Determine newest data between /tmp and local data/
   let newestData: T | null = null;
   if (tmpData !== null && localData !== null) {
-    newestData = tmpMtime >= localMtime ? tmpData : localData;
+    if (Array.isArray(tmpData) && Array.isArray(localData)) {
+      // Merge by unique 'id' preserving both pre-seeded data and runtime writes
+      const mergedMap = new Map<string, any>();
+      for (const item of localData) {
+        if (item && item.id) mergedMap.set(item.id, item);
+      }
+      for (const item of tmpData) {
+        if (item && item.id) mergedMap.set(item.id, item);
+      }
+      newestData = Array.from(mergedMap.values()) as unknown as T;
+    } else {
+      newestData = tmpMtime >= localMtime ? tmpData : localData;
+    }
   } else if (tmpData !== null) {
     newestData = tmpData;
   } else if (localData !== null) {

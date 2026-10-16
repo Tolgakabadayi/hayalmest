@@ -6,9 +6,20 @@ import { StageEvent } from '@/data/eventsData';
  * Otherwise, it parses days like "Her Perşembe", "Her Çarşamba & Cuma", "Her Cumartesi", etc.
  * and finds the closest date matching one of those days starting from today.
  */
+/**
+ * Converts a Date object to local YYYY-MM-DD string without UTC timezone shift.
+ * Prevents the notorious 1-day rollback bug in Turkey (UTC+3).
+ */
+export function formatLocalDateYMD(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function getNextEventDate(event?: StageEvent | null, baseDate = new Date()): string {
   if (!event) {
-    return baseDate.toISOString().split('T')[0];
+    return formatLocalDateYMD(baseDate);
   }
 
   // If dateStr is an actual date in format YYYY-MM-DD
@@ -40,7 +51,7 @@ export function getNextEventDate(event?: StageEvent | null, baseDate = new Date(
 
   // If no specific days found, default to today
   if (targetDays.length === 0) {
-    return baseDate.toISOString().split('T')[0];
+    return formatLocalDateYMD(baseDate);
   }
 
   // Find the closest upcoming day starting from today
@@ -49,12 +60,9 @@ export function getNextEventDate(event?: StageEvent | null, baseDate = new Date(
     const d = new Date(candidate);
     d.setDate(candidate.getDate() + offset);
     if (targetDays.includes(d.getDay())) {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
+      return formatLocalDateYMD(d);
     }
   }
 
-  return baseDate.toISOString().split('T')[0];
+  return formatLocalDateYMD(baseDate);
 }
